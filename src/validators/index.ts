@@ -1,0 +1,5 @@
+export * from './user.validator'
+export * from './book.validator'
+export * from './author.validator'
+export * from './publisher.validator'
+export * from './history.validator'

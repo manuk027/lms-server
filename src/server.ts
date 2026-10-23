@@ -1,4 +1,5 @@
 import 'dotenv/config'
+import mongoose from 'mongoose'
 import { createApp } from './app'
 import { connectDatabase } from './config/database'
 
@@ -13,12 +14,25 @@ async function start() {
     console.warn('MONGODB_URI is not set; starting without a database connection.')
   }
 
-  app.listen(port, () => {
+  const server = app.listen(port, () => {
     console.info(`Library API listening on port ${port}`)
   })
+
+  const shutdown = async (signal: string) => {
+    console.info(`Received ${signal}. Shutting down gracefully...`)
+    server.close(async () => {
+      await mongoose.disconnect()
+      console.info('MongoDB disconnected and server closed.')
+      process.exit(0)
+    })
+  }
+
+  process.on('SIGINT', () => shutdown('SIGINT'))
+  process.on('SIGTERM', () => shutdown('SIGTERM'))
 }
 
 start().catch((error: unknown) => {
   console.error('Failed to start API:', error)
   process.exitCode = 1
 })
+

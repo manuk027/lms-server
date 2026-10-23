@@ -1,5 +1,6 @@
 import cors from 'cors'
 import express from 'express'
+import mongoose from 'mongoose'
 
 export function createApp() {
   const app = express()
@@ -9,7 +10,16 @@ export function createApp() {
   app.use(express.json())
 
   app.get('/api/health', (_request, response) => {
-    response.json({ status: 'ok', service: 'library-management-api' })
+    const isDbConnected = mongoose.connection.readyState === 1
+    response.json({
+      status: 'ok',
+      service: 'library-management-api',
+      database: {
+        connected: isDbConnected,
+        name: isDbConnected ? mongoose.connection.name : null,
+      },
+      timestamp: new Date().toISOString(),
+    })
   })
 
   return app
