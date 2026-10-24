@@ -105,6 +105,13 @@ export class AdminController {
   ): Promise<void> {
     try {
       const book = await AdminService.createBook(req.body)
+       console.log('✅ [MongoDB] Saved book document:', {
+        id: book._id,
+        title: book.bookName,
+        imageUrl: book.imageUrl,
+        shelf: book.shelf,
+        bookCode: book.bookCode
+      })
       res.status(201).json({
         success: true,
         message: 'Book successfully stored in library database',
