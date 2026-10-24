@@ -3,6 +3,7 @@ import cors from 'cors'
 import express from 'express'
 import mongoose from 'mongoose'
 import { adminRouter } from './routes/admin.routes'
+import { authRouter } from './routes/auth.routes'
 
 export function createApp() {
   const app = express()
@@ -29,6 +30,9 @@ export function createApp() {
       timestamp: new Date().toISOString(),
     })
   })
+
+  // Authentication & user management routes
+  app.use('/api/auth', authRouter)
 
   // Admin routes
   app.use('/api/admin', adminRouter)
