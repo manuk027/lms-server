@@ -226,8 +226,22 @@ The server listens on `http://localhost:4000` by default. When `MONGODB_URI` is 
 
 ---
 
-## Health Check API
+## API Endpoints
 
+### System Health
 | Method | Path | Response |
 | :--- | :--- | :--- |
 | `GET` | `/api/health` | `{"status": "ok", "service": "library-management-api", "database": {"connected": true, "name": "library-management"}, "timestamp": "..."}` |
+
+### Admin Portal (`/admin`)
+| Method | Path | Auth Required | Description |
+| :--- | :--- | :--- | :--- |
+| `POST` | `/api/admin/auth/login` | No (Throttled) | Validates username & password, issues HTTP-only browser session cookie |
+| `POST` | `/api/admin/auth/logout` | No | Clears admin browser session cookie |
+| `GET` | `/api/admin/auth/me` | Yes (Session) | Returns current authenticated administrator profile |
+| `GET` | `/api/admin/dashboard/stats` | Yes (Session) | Aggregates live metrics (books, loans, patrons, overdue count) |
+
+### Admin Session & Security Specifications
+- **Throttling Protection**: Enforces rate limits on consecutive attempts (minimum 1.5s interval between submissions, maximum 5 attempts/minute with 30s block duration).
+- **Browser-Scoped Session**: Session cookie is issued without `maxAge` / `expires` header, and token is retained strictly in client `sessionStorage`. When the browser is closed, the session expires automatically.
+
