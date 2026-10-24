@@ -2,6 +2,7 @@ import cookieParser from 'cookie-parser'
 import cors from 'cors'
 import express from 'express'
 import mongoose from 'mongoose'
+import { adminRouter } from './routes/admin.routes'
 import { authRouter } from './routes/auth.routes'
 
 export function createApp() {
@@ -32,6 +33,9 @@ export function createApp() {
 
   // Authentication & user management routes
   app.use('/api/auth', authRouter)
+
+  // Admin routes
+  app.use('/api/admin', adminRouter)
 
   return app
 }

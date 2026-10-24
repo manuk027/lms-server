@@ -2,6 +2,8 @@ import 'dotenv/config'
 import mongoose from 'mongoose'
 import { createApp } from './app'
 import { connectDatabase } from './config/database'
+import { AdminService } from './services/admin.service'
+
 
 const port = Number(process.env.PORT ?? 4000)
 const app = createApp()
@@ -10,6 +12,7 @@ async function start() {
   const mongoUri = process.env.MONGODB_URI
   if (mongoUri) {
     await connectDatabase(mongoUri)
+    await AdminService.ensureDefaultAdmin()
   } else {
     console.warn('MONGODB_URI is not set; starting without a database connection.')
   }
