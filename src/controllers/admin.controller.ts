@@ -148,4 +148,73 @@ export class AdminController {
       })
     }
   }
+
+  /**
+   * Get all registered users / patrons
+   * GET /api/admin/users
+   */
+  static async getUsers(
+    _req: AuthenticatedAdminRequest,
+    res: Response
+  ): Promise<void> {
+    try {
+      const users = await AdminService.getUsers()
+      res.status(200).json({
+        success: true,
+        users,
+      })
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Failed to retrieve users'
+      res.status(500).json({
+        success: false,
+        error: message,
+      })
+    }
+  }
+
+  /**
+   * Get all publications
+   * GET /api/admin/publications
+   */
+  static async getPublications(
+    _req: AuthenticatedAdminRequest,
+    res: Response
+  ): Promise<void> {
+    try {
+      const publications = await AdminService.getPublications()
+      res.status(200).json({
+        success: true,
+        publications,
+      })
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Failed to retrieve publications'
+      res.status(500).json({
+        success: false,
+        error: message,
+      })
+    }
+  }
+
+  /**
+   * Get all authors
+   * GET /api/admin/authors
+   */
+  static async getAuthors(
+    _req: AuthenticatedAdminRequest,
+    res: Response
+  ): Promise<void> {
+    try {
+      const authors = await AdminService.getAuthors()
+      res.status(200).json({
+        success: true,
+        authors,
+      })
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Failed to retrieve authors'
+      res.status(500).json({
+        success: false,
+        error: message,
+      })
+    }
+  }
 }

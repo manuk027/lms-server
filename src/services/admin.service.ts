@@ -62,8 +62,7 @@ export class AdminService {
     })
 
     if (!validation.isValid) {
-      const firstError = Object.values(validation.errors)[0]
-      throw new Error(firstError || 'Invalid admin credentials')
+      throw new Error('Invalid username or password')
     }
 
     const username = (usernameInput as string).toLowerCase().trim()
@@ -274,5 +273,26 @@ export class AdminService {
       .populate('publisher', 'name')
       .populate('authors', 'name category')
       .sort({ createdAt: -1 })
+  }
+
+  /**
+   * Get all registered library users / patrons
+   */
+  static async getUsers() {
+    return User.find().sort({ createdAt: -1 })
+  }
+
+  /**
+   * Get all publishers / publications
+   */
+  static async getPublications() {
+    return Publisher.find().sort({ createdAt: -1 })
+  }
+
+  /**
+   * Get all registered book authors
+   */
+  static async getAuthors() {
+    return Author.find().sort({ createdAt: -1 })
   }
 }
