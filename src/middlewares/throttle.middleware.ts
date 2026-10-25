@@ -54,7 +54,7 @@ export function createThrottleMiddleware(options: ThrottleOptions = {}) {
       const waitSeconds = Math.ceil((record.blockedUntil - now) / 1000)
       res.status(429).json({
         success: false,
-        error: `Too many login attempts. Please wait ${waitSeconds}s before trying again.`,
+        error: 'Too many attempts. Please try again after 1 minute.',
         retryAfter: waitSeconds,
       })
       return
@@ -63,11 +63,10 @@ export function createThrottleMiddleware(options: ThrottleOptions = {}) {
     // 2. Check if consecutive requests are too fast (rapid firing / clicking)
     const timeSinceLast = now - record.lastRequestTime
     if (timeSinceLast < minIntervalMs) {
-      const waitSeconds = Math.ceil((minIntervalMs - timeSinceLast) / 1000)
       res.status(429).json({
         success: false,
-        error: 'Please wait a moment between login attempts.',
-        retryAfter: waitSeconds,
+        error: 'Too many attempts. Please try again after 1 minute.',
+        retryAfter: 60,
       })
       return
     }
@@ -82,14 +81,13 @@ export function createThrottleMiddleware(options: ThrottleOptions = {}) {
 
     record.lastRequestTime = now
 
-    if (record.attemptsCount > maxAttempts) {
+    if (record.attemptsCount >= maxAttempts) {
       record.blockedUntil = now + blockDurationMs
       ipStore.set(clientIp, record)
-      const waitSeconds = Math.ceil(blockDurationMs / 1000)
       res.status(429).json({
         success: false,
-        error: `Maximum login attempts exceeded. Please wait ${waitSeconds}s.`,
-        retryAfter: waitSeconds,
+        error: 'Too many attempts. Please try again after 1 minute.',
+        retryAfter: 60,
       })
       return
     }
@@ -101,8 +99,8 @@ export function createThrottleMiddleware(options: ThrottleOptions = {}) {
 
 // Default export for admin login route
 export const adminLoginThrottle = createThrottleMiddleware({
-  minIntervalMs: 1500, // Enforce at least 1.5 seconds between clicks
-  maxAttempts: 5, // Up to 5 attempts per minute
-  windowMs: 60 * 1000,
-  blockDurationMs: 30 * 1000, // 30 seconds cooldown if limit breached
+  minIntervalMs: 800,
+  maxAttempts: 3, // Multiple attempts within 1 minute
+  windowMs: 60 * 1000, // 1 minute window
+  blockDurationMs: 60 * 1000, // 1 minute block
 })

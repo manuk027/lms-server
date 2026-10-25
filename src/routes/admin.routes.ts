@@ -16,3 +16,8 @@ adminRouter.get('/dashboard/stats', requireAdminAuth, AdminController.getDashboa
 // Inventory & Book Management endpoints
 adminRouter.post('/books', requireAdminAuth, AdminController.createBook)
 adminRouter.get('/books', requireAdminAuth, AdminController.getBooks)
+
+// Management endpoints
+adminRouter.get('/users', requireAdminAuth, AdminController.getUsers)
+adminRouter.get('/publications', requireAdminAuth, AdminController.getPublications)
+adminRouter.get('/authors', requireAdminAuth, AdminController.getAuthors)
