@@ -94,4 +94,58 @@ export class AdminController {
       })
     }
   }
+
+  /**
+   * Create and store a new book
+   * POST /api/admin/books
+   */
+  static async createBook(
+    req: AuthenticatedAdminRequest,
+    res: Response
+  ): Promise<void> {
+    try {
+      const book = await AdminService.createBook(req.body)
+       console.log('✅ [MongoDB] Saved book document:', {
+        id: book._id,
+        title: book.bookName,
+        imageUrl: book.imageUrl,
+        shelf: book.shelf,
+        bookCode: book.bookCode
+      })
+      res.status(201).json({
+        success: true,
+        message: 'Book successfully stored in library database',
+        book,
+      })
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Failed to create book'
+      res.status(400).json({
+        success: false,
+        error: message,
+      })
+    }
+  }
+
+  /**
+   * Get all books
+   * GET /api/admin/books
+   */
+  static async getBooks(
+    _req: AuthenticatedAdminRequest,
+    res: Response
+  ): Promise<void> {
+    try {
+      const books = await AdminService.getBooks()
+      res.status(200).json({
+        success: true,
+        books,
+      })
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Failed to retrieve books'
+      res.status(500).json({
+        success: false,
+        error: message,
+      })
+    }
+  }
 }

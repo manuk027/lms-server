@@ -11,6 +11,10 @@ export interface IBook extends Document {
   noOfPages: number
   available: boolean
   language: string
+  imageUrl?: string
+  imageCaption?: string
+  isbn?: string
+  notes?: string
   createdAt: Date
   updatedAt: Date
 }
@@ -77,6 +81,27 @@ const bookSchema = new Schema<IBook>(
       trim: true,
       index: true,
       validate: BookValidators.languageValidator,
+    },
+    imageUrl: {
+      type: String,
+      trim: true,
+      default: '',
+    },
+    imageCaption: {
+      type: String,
+      trim: true,
+      default: '',
+    },
+    isbn: {
+      type: String,
+      trim: true,
+      index: true,
+      default: '',
+    },
+    notes: {
+      type: String,
+      trim: true,
+      default: '',
     },
   },
   {

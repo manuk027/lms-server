@@ -1,8 +1,10 @@
 import bcrypt from 'bcryptjs'
 import jwt from 'jsonwebtoken'
 import { Admin, IAdmin } from '../models/Admin'
+import { Author } from '../models/Author'
 import { Book } from '../models/Book'
 import { History } from '../models/History'
+import { Publisher } from '../models/Publisher'
 import { User } from '../models/User'
 import { AdminValidators } from '../validators/admin.validator'
 
@@ -151,5 +153,126 @@ export class AdminService {
       },
       recentActivity,
     }
+  }
+
+  /**
+   * Create and store a new book in the database
+   */
+  static async createBook(input: {
+    name?: string
+    bookName?: string
+    authorName?: string
+    publication?: string
+    noOfPages?: number | string
+    language?: string
+    category?: string
+    imageUrl?: string
+    imageCaption?: string
+    shelf?: string
+    isAvailable?: boolean
+    available?: boolean
+    bookCode?: string
+    notes?: string
+    isbn?: string
+  }) {
+    const rawName = input.name || input.bookName
+    if (!rawName || !rawName.trim()) {
+      throw new Error('Book title/name is required.')
+    }
+
+    const rawAuthor = input.authorName
+    if (!rawAuthor || !rawAuthor.trim()) {
+      throw new Error('Author name is required.')
+    }
+
+    const rawPublication = input.publication
+    if (!rawPublication || !rawPublication.trim()) {
+      throw new Error('Publication name is required.')
+    }
+
+    const rawShelf = input.shelf
+    if (!rawShelf || !rawShelf.trim()) {
+      throw new Error('Shelf location is required.')
+    }
+
+    const rawCategory = input.category || 'General'
+    const parsedPages = typeof input.noOfPages === 'number'
+      ? input.noOfPages
+      : parseInt(String(input.noOfPages || '1'), 10)
+
+    if (isNaN(parsedPages) || parsedPages < 1) {
+      throw new Error('Number of pages must be at least 1.')
+    }
+
+    // 1. Find or create Publisher
+    let publisher = await Publisher.findOne({ name: rawPublication.trim() })
+    if (!publisher) {
+      publisher = await Publisher.create({ name: rawPublication.trim() })
+    }
+
+    // 2. Find or create Author
+    let author = await Author.findOne({ name: rawAuthor.trim() })
+    if (!author) {
+      author = await Author.create({
+        name: rawAuthor.trim(),
+        category: rawCategory.trim(),
+        gender: 'Not specified',
+      })
+    }
+
+    // 3. Determine or generate unique Book Code
+    let finalBookCode = (input.bookCode || '').trim().toUpperCase()
+    if (!finalBookCode) {
+      if (input.isbn && input.isbn.trim()) {
+        finalBookCode = `ISBN-${input.isbn.trim().replace(/[^0-9X]/gi, '')}`
+      } else {
+        const prefix = rawName.substring(0, 3).toUpperCase().replace(/[^A-Z]/g, 'BK')
+        const randomSuffix = Math.floor(1000 + Math.random() * 9000)
+        finalBookCode = `${prefix}-${randomSuffix}`
+      }
+    }
+
+    // Ensure uniqueness if collision occurs
+    let existingBook = await Book.findOne({ bookCode: finalBookCode })
+    if (existingBook) {
+      finalBookCode = `${finalBookCode}-${Math.floor(100 + Math.random() * 900)}`
+    }
+
+    // 4. Create and persist Book
+    const isAvail = input.isAvailable !== undefined ? input.isAvailable : input.available !== undefined ? input.available : true
+
+    const book = new Book({
+      bookName: rawName.trim(),
+      publisher: publisher._id,
+      authors: [author._id],
+      shelf: rawShelf.trim(),
+      category: rawCategory.trim(),
+      bookCode: finalBookCode,
+      noOfPages: parsedPages,
+      available: isAvail,
+      language: (input.language || 'English').trim(),
+      imageUrl: (input.imageUrl || '').trim(),
+      imageCaption: (input.imageCaption || '').trim(),
+      isbn: (input.isbn || '').trim(),
+      notes: (input.notes || '').trim(),
+    })
+
+    await book.save()
+
+    // Populate references before returning
+    await book.populate('publisher', 'name')
+    await book.populate('authors', 'name category')
+
+    return book
+  }
+
+  /**
+   * Get all books for inventory management
+   */
+  static async getBooks() {
+    return Book.find()
+      .populate('publisher', 'name')
+      .populate('authors', 'name category')
+      .sort({ createdAt: -1 })
   }
 }
