@@ -217,4 +217,54 @@ export class AdminController {
       })
     }
   }
+
+  /**
+   * Update an existing book
+   * PUT /api/admin/books/:id
+   */
+  static async updateBook(
+    req: AuthenticatedAdminRequest,
+    res: Response
+  ): Promise<void> {
+    try {
+      const { id } = req.params
+      const book = await AdminService.updateBook(id as string, req.body)
+      res.status(200).json({
+        success: true,
+        message: 'Book updated successfully',
+        book,
+      })
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Failed to update book'
+      res.status(400).json({
+        success: false,
+        error: message,
+      })
+    }
+  }
+
+  /**
+   * Delete a book
+   * DELETE /api/admin/books/:id
+   */
+  static async deleteBook(
+    req: AuthenticatedAdminRequest,
+    res: Response
+  ): Promise<void> {
+    try {
+      const { id } = req.params
+      const result = await AdminService.deleteBook(id as string)
+      res.status(200).json({
+        success: true,
+        message: result.message,
+      })
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Failed to delete book'
+      res.status(400).json({
+        success: false,
+        error: message,
+      })
+    }
+  }
+
 }

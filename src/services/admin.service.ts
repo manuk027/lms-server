@@ -259,6 +259,7 @@ export class AdminService {
   static async updateBook(
     bookId: string,
     input: {
+      name?: string,
       bookName?: string;
       authorName?: string;
       publication?: string;
@@ -280,7 +281,7 @@ export class AdminService {
       throw new Error("Book is not found");
     }
    // 1 - book name
-    const rawName = input.bookName;
+    const rawName = input.name || input.bookName;
     if (rawName !== undefined) {
       if (!rawName.trim()) throw new Error("Book title/name cannot be empty.");
       book.bookName = rawName.trim();
