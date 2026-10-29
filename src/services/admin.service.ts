@@ -149,6 +149,7 @@ export class AdminService {
     authorName?: string;
     publication?: string;
     noOfPages?: number | string;
+    noOfCopies?: number | string;
     language?: string;
     category?: string;
     imageUrl?: string;
@@ -227,7 +228,8 @@ export class AdminService {
     // 4. Create and persist Book
     const isAvail = input.isAvailable !== undefined ? input.isAvailable : input.available !== undefined ? input.available : true;
 
-      if (isNaN(parsedCopies) || parsedPages < 1) {
+    const parsedCopies = typeof input.noOfCopies === "number" ? input.noOfCopies : parseInt(String(input.noOfCopies || "1"), 10);
+    if (isNaN(parsedCopies) || parsedCopies < 1) {
       throw new Error('Number of copies must be at least 1.')
     }
 
@@ -240,7 +242,7 @@ export class AdminService {
       category: rawCategory.trim(),
       bookCode: finalBookCode,
       noOfPages: parsedPages,
-      noOfCopies : input.noOfCopies,
+      noOfCopies: parsedCopies,
       available: isAvail,
       language: (input.language || "English").trim(),
       imageUrl: (input.imageUrl || "").trim(),
@@ -273,6 +275,7 @@ export class AdminService {
       authorName?: string;
       publication?: string;
       noOfPages?: number | string;
+    noOfCopies?: number | string;
       language?: string;
       category?: string;
       imageUrl?: string;
