@@ -1,12 +1,15 @@
-import bcrypt from "bcryptjs";
-import jwt from "jsonwebtoken";
-import { Admin, IAdmin } from "../models/Admin";
-import { Author } from "../models/Author";
-import { Book } from "../models/Book";
-import { History } from "../models/History";
-import { Publisher } from "../models/Publisher";
-import { User } from "../models/User";
-import { AdminValidators } from "../validators/admin.validator";
+
+import bcrypt from 'bcryptjs'
+import jwt from 'jsonwebtoken'
+import { Admin, IAdmin } from '../models/Admin'
+import { Author } from '../models/Author'
+import { Book } from '../models/Book'
+import { History } from '../models/History'
+import { Publisher } from '../models/Publisher'
+import { User } from '../models/User'
+import { AdminValidators } from '../validators/admin.validator'
+import { BookValidators } from '../validators'
+
 
 export interface AdminTokenPayload {
   sub: string;
@@ -224,6 +227,11 @@ export class AdminService {
     // 4. Create and persist Book
     const isAvail = input.isAvailable !== undefined ? input.isAvailable : input.available !== undefined ? input.available : true;
 
+      if (isNaN(parsedCopies) || parsedPages < 1) {
+      throw new Error('Number of copies must be at least 1.')
+    }
+
+   
     const book = new Book({
       bookName: rawName.trim(),
       publisher: publisher._id,
@@ -232,6 +240,7 @@ export class AdminService {
       category: rawCategory.trim(),
       bookCode: finalBookCode,
       noOfPages: parsedPages,
+      noOfCopies : input.noOfCopies,
       available: isAvail,
       language: (input.language || "English").trim(),
       imageUrl: (input.imageUrl || "").trim(),

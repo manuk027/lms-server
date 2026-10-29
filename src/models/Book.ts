@@ -9,7 +9,8 @@ export interface IBook extends Document {
   category: string
   bookCode: string
   noOfPages: number
-  available: boolean
+  available: boolean,
+  noOfCopies : number,
   language: string
   imageUrl?: string
   imageCaption?: string
