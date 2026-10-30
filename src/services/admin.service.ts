@@ -5,6 +5,7 @@ import { Admin, IAdmin } from '../models/Admin'
 import { Author } from '../models/Author'
 import { Book } from '../models/Book'
 import { History } from '../models/History'
+import { Notification } from '../models/Notification'
 import { Publisher } from '../models/Publisher'
 import { User } from '../models/User'
 import { AdminValidators } from '../validators/admin.validator'
@@ -405,5 +406,136 @@ export class AdminService {
     }
     await Book.findByIdAndDelete(bookId);
     return { success: true, message: "Book successfully deleted" };
+  }
+
+  /**
+   * Get admin notifications
+   */
+  static async getNotifications() {
+    const notifications = await Notification.find({ recipient: 'admin' })
+      .populate('userId', 'fullName email phoneNo status')
+      .sort({ createdAt: -1 })
+      .limit(50);
+    const unreadCount = await Notification.countDocuments({
+      recipient: 'admin',
+      read: false,
+    });
+    return { notifications, unreadCount };
+  }
+
+  /**
+   * Mark a notification as read
+   */
+  static async markNotificationRead(notificationId: string) {
+    const notification = await Notification.findByIdAndUpdate(
+      notificationId,
+      { read: true },
+      { new: true }
+    );
+    if (!notification) {
+      throw new Error('Notification not found');
+    }
+    const unreadCount = await Notification.countDocuments({
+      recipient: 'admin',
+      read: false,
+    });
+    return { notification, unreadCount };
+  }
+
+  /**
+   * Mark all notifications as read
+   */
+  static async markAllNotificationsRead() {
+    await Notification.updateMany({ recipient: 'admin', read: false }, { read: true });
+    return { success: true, unreadCount: 0 };
+  }
+
+  /**
+   * Get user requests with search, filter, and sorting
+   */
+  static async getUserRequests(params?: {
+    status?: string;
+    search?: string;
+    sortBy?: string;
+  }) {
+    const filter: Record<string, any> = {};
+
+    if (params?.status && params.status !== 'all') {
+      filter.status = params.status;
+    }
+
+    if (params?.search && params.search.trim()) {
+      const searchRegex = new RegExp(params.search.trim(), 'i');
+      filter.$or = [
+        { fullName: searchRegex },
+        { email: searchRegex },
+        { phoneNo: searchRegex },
+      ];
+    }
+
+    let sort: Record<string, any> = { createdAt: -1 };
+    if (params?.sortBy) {
+      switch (params.sortBy) {
+        case 'date-asc':
+          sort = { createdAt: 1 };
+          break;
+        case 'name-asc':
+          sort = { fullName: 1 };
+          break;
+        case 'name-desc':
+          sort = { fullName: -1 };
+          break;
+        case 'email-asc':
+          sort = { email: 1 };
+          break;
+        case 'email-desc':
+          sort = { email: -1 };
+          break;
+        case 'date-desc':
+        default:
+          sort = { createdAt: -1 };
+          break;
+      }
+    }
+
+    const requests = await User.find(filter).sort(sort);
+    const waitingCount = await User.countDocuments({ status: 'waiting' });
+    const approvedCount = await User.countDocuments({ status: 'approved' });
+    const rejectedCount = await User.countDocuments({ status: 'rejected' });
+    const totalCount = await User.countDocuments();
+
+    return {
+      requests,
+      counts: {
+        waiting: waitingCount,
+        approved: approvedCount,
+        rejected: rejectedCount,
+        total: totalCount,
+      },
+    };
+  }
+
+  /**
+   * Update user status (approve, reject, or set waiting)
+   */
+  static async updateUserStatus(userId: string, status: 'waiting' | 'approved' | 'rejected') {
+    if (!['waiting', 'approved', 'rejected'].includes(status)) {
+      throw new Error('Invalid status. Allowed values: waiting, approved, rejected');
+    }
+
+    const user = await User.findById(userId);
+    if (!user) {
+      throw new Error('User not found');
+    }
+
+    user.status = status;
+    await user.save();
+
+    // If approved, mark any waiting notification for this user as read
+    if (status === 'approved') {
+      await Notification.updateMany({ userId: user._id, read: false }, { read: true });
+    }
+
+    return user;
   }
 }
