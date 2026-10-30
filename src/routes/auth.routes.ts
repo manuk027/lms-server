@@ -8,6 +8,7 @@ export const authRouter = Router()
 authRouter.post('/google', AuthController.googleAuth)
 authRouter.post('/refresh', AuthController.refresh)
 authRouter.post('/logout', AuthController.logout)
+authRouter.get('/books', AuthController.getPublicBooks)
 
 // Protected user profile endpoint
 authRouter.get('/me', requireAuth, AuthController.getMe)

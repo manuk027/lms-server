@@ -19,7 +19,14 @@ adminRouter.get('/books', requireAdminAuth, AdminController.getBooks)
 
 // Management endpoints
 adminRouter.get('/users', requireAdminAuth, AdminController.getUsers)
+adminRouter.patch('/users/:id/status', requireAdminAuth, AdminController.updateUserStatus)
+adminRouter.get('/requests', requireAdminAuth, AdminController.getUserRequests)
 adminRouter.get('/publications', requireAdminAuth, AdminController.getPublications)
 adminRouter.get('/authors', requireAdminAuth, AdminController.getAuthors)
 adminRouter.put('/books/:id', requireAdminAuth, AdminController.updateBook)      
-adminRouter.delete('/books/:id', requireAdminAuth, AdminController.deleteBook) 
+adminRouter.delete('/books/:id', requireAdminAuth, AdminController.deleteBook)
+
+// Notification endpoints
+adminRouter.get('/notifications', requireAdminAuth, AdminController.getNotifications)
+adminRouter.patch('/notifications/:id/read', requireAdminAuth, AdminController.markNotificationRead)
+adminRouter.patch('/notifications/mark-all-read', requireAdminAuth, AdminController.markAllNotificationsRead) 
