@@ -4,6 +4,7 @@ import {
   getRefreshTokenCookieOptions,
 } from '../config/jwt'
 import { AuthenticatedRequest } from '../middlewares/auth.middleware'
+import { Book } from '../models/Book'
 import { AuthService } from '../services/auth.service'
 
 export class AuthController {
@@ -123,6 +124,31 @@ export class AuthController {
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : 'User not found'
       res.status(404).json({
+        success: false,
+        error: message,
+      })
+    }
+  }
+
+  /**
+   * Get public books list for preview & login backgrounds
+   * GET /api/auth/books
+   */
+  static async getPublicBooks(_req: Request, res: Response): Promise<void> {
+    try {
+      const books = await Book.find()
+        .populate('publisher', 'name')
+        .populate('authors', 'name category')
+        .sort({ createdAt: -1 })
+        .limit(60)
+
+      res.status(200).json({
+        success: true,
+        books,
+      })
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Failed to retrieve books'
+      res.status(500).json({
         success: false,
         error: message,
       })

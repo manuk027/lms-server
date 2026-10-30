@@ -2,6 +2,7 @@ import cookieParser from 'cookie-parser'
 import cors from 'cors'
 import express from 'express'
 import mongoose from 'mongoose'
+import { AuthController } from './controllers/auth.controller'
 import { adminRouter } from './routes/admin.routes'
 import { authRouter } from './routes/auth.routes'
 import { userRouter } from './routes/user.routes'
@@ -35,6 +36,9 @@ export function createApp() {
   // Authentication & user management routes
   app.use('/api/auth', authRouter)
   app.use('/api/user', userRouter)
+
+  // Public books route for login background & preview
+  app.get('/api/books', AuthController.getPublicBooks)
 
   // Admin routes
   app.use('/api/admin', adminRouter)

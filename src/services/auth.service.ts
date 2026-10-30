@@ -1,3 +1,4 @@
+import { Notification } from '../models/Notification'
 import { IUser, User } from '../models/User'
 import { FirebaseService } from './firebase.service'
 import { TokenService } from './token.service'
@@ -10,6 +11,7 @@ export interface IAuthResult {
     phoneNo?: string
     googleId?: string
     avatar?: string
+    status: 'waiting' | 'approved' | 'rejected'
   }
   accessToken: string
   refreshToken: string
@@ -30,15 +32,31 @@ export class AuthService {
     })
 
     if (!user) {
-      // Create new user (Registration)
+      // Create new user (Registration) - set into waiting list by default
       user = new User({
         fullName: clientData?.fullName?.trim() || firebaseUser.name || 'Library Patron',
         email: firebaseUser.email.toLowerCase(),
         googleId: firebaseUser.uid,
+        status: 'waiting',
         ...(clientData?.phoneNo ? { phoneNo: clientData.phoneNo.trim() } : {}),
       })
       await user.save()
-      console.info(`Registered new user via Google Auth: ${user.email} (${user._id})`)
+      console.info(`Registered new user via Google Auth: ${user.email} (${user._id}) [Status: waiting]`)
+
+      // Create admin notification
+      try {
+        await Notification.create({
+          title: 'New User Registration Request',
+          message: `${user.fullName} (${user.email}) registered and is waiting for approval.`,
+          type: 'user_registration',
+          recipient: 'admin',
+          read: false,
+          link: '/admin/requests',
+          userId: user._id,
+        })
+      } catch (notifErr) {
+        console.error('Failed to create admin notification for new user:', notifErr)
+      }
     } else {
       // Existing user: ensure googleId is linked if it wasn't
       let hasUpdates = false
@@ -60,7 +78,7 @@ export class AuthService {
       if (hasUpdates) {
         await user.save()
       }
-      console.info(`Authenticated existing user via Google Auth: ${user.email} (${user._id})`)
+      console.info(`Authenticated existing user via Google Auth: ${user.email} (${user._id}) [Status: ${user.status}]`)
     }
 
     const { accessToken, refreshToken } = TokenService.generateTokens(user)
@@ -73,6 +91,7 @@ export class AuthService {
         phoneNo: user.phoneNo,
         googleId: user.googleId,
         avatar: firebaseUser.picture,
+        status: user.status || 'waiting',
       },
       accessToken,
       refreshToken,
@@ -103,6 +122,7 @@ export class AuthService {
         email: user.email,
         phoneNo: user.phoneNo,
         googleId: user.googleId,
+        status: user.status || 'waiting',
       },
       accessToken,
       refreshToken,
@@ -124,6 +144,7 @@ export class AuthService {
       email: user.email,
       phoneNo: user.phoneNo,
       googleId: user.googleId,
+      status: user.status || 'waiting',
       createdAt: user.createdAt,
     }
   }

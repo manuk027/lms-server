@@ -6,6 +6,7 @@ export interface IUser extends Document {
   phoneNo?: string
   email: string
   googleId?: string
+  status: 'waiting' | 'approved' | 'rejected'
   createdAt: Date
   updatedAt: Date
 }
@@ -38,6 +39,12 @@ const userSchema = new Schema<IUser>(
       sparse: true,
       unique: true,
       trim: true,
+    },
+    status: {
+      type: String,
+      enum: ['waiting', 'approved', 'rejected'],
+      default: 'waiting',
+      index: true,
     },
   },
   {

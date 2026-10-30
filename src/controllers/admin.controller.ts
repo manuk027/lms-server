@@ -267,4 +267,133 @@ export class AdminController {
     }
   }
 
+  /**
+   * Get admin notifications
+   * GET /api/admin/notifications
+   */
+  static async getNotifications(
+    _req: AuthenticatedAdminRequest,
+    res: Response
+  ): Promise<void> {
+    try {
+      const data = await AdminService.getNotifications()
+      res.status(200).json({
+        success: true,
+        ...data,
+      })
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Failed to retrieve notifications'
+      res.status(500).json({
+        success: false,
+        error: message,
+      })
+    }
+  }
+
+  /**
+   * Mark single notification as read
+   * PATCH /api/admin/notifications/:id/read
+   */
+  static async markNotificationRead(
+    req: AuthenticatedAdminRequest,
+    res: Response
+  ): Promise<void> {
+    try {
+      const { id } = req.params
+      const data = await AdminService.markNotificationRead(id as string)
+      res.status(200).json({
+        success: true,
+        ...data,
+      })
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Failed to update notification'
+      res.status(400).json({
+        success: false,
+        error: message,
+      })
+    }
+  }
+
+  /**
+   * Mark all notifications as read
+   * PATCH /api/admin/notifications/mark-all-read
+   */
+  static async markAllNotificationsRead(
+    _req: AuthenticatedAdminRequest,
+    res: Response
+  ): Promise<void> {
+    try {
+      const data = await AdminService.markAllNotificationsRead()
+      res.status(200).json(data)
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Failed to mark all notifications read'
+      res.status(500).json({
+        success: false,
+        error: message,
+      })
+    }
+  }
+
+  /**
+   * Get user registration requests with search, filter, and sorting
+   * GET /api/admin/requests
+   */
+  static async getUserRequests(
+    req: AuthenticatedAdminRequest,
+    res: Response
+  ): Promise<void> {
+    try {
+      const { status, search, sortBy } = req.query
+      const data = await AdminService.getUserRequests({
+        status: status as string,
+        search: search as string,
+        sortBy: sortBy as string,
+      })
+      res.status(200).json({
+        success: true,
+        ...data,
+      })
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Failed to retrieve requests'
+      res.status(500).json({
+        success: false,
+        error: message,
+      })
+    }
+  }
+
+  /**
+   * Update user status (approve, reject, or set waiting)
+   * PATCH /api/admin/users/:id/status
+   */
+  static async updateUserStatus(
+    req: AuthenticatedAdminRequest,
+    res: Response
+  ): Promise<void> {
+    try {
+      const { id } = req.params
+      const { status } = req.body
+
+      if (!status) {
+        res.status(400).json({
+          success: false,
+          error: 'Status is required (waiting, approved, or rejected)',
+        })
+        return
+      }
+
+      const user = await AdminService.updateUserStatus(id as string, status)
+      res.status(200).json({
+        success: true,
+        message: `User status successfully updated to ${status}`,
+        user,
+      })
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Failed to update user status'
+      res.status(400).json({
+        success: false,
+        error: message,
+      })
+    }
+  }
 }

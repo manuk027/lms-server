@@ -1,5 +1,6 @@
 import { Response } from 'express'
 import { AuthenticatedRequest } from '../middlewares/auth.middleware'
+import { User } from '../models/User'
 import { UserService } from '../services/user.service'
 
 export class UserController {
@@ -13,10 +14,34 @@ export class UserController {
         return
       }
 
+      const user = await User.findById(req.user.sub)
+      if (!user) {
+        res.status(404).json({ success: false, error: 'User not found' })
+        return
+      }
+
+      if (user.status === 'waiting') {
+        res.status(200).json({
+          success: true,
+          data: {
+            status: 'waiting',
+            message: 'You are on waiting list, Request admin for approval',
+            activeLoans: [],
+            totalBorrowedCount: 0,
+            currentlyHoldingCount: 0,
+            returnedCount: 0,
+          },
+        })
+        return
+      }
+
       const data = await UserService.getUserDashboard(req.user.sub)
       res.status(200).json({
         success: true,
-        data,
+        data: {
+          ...data,
+          status: user.status || 'approved',
+        },
       })
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : 'Failed to fetch user dashboard'
@@ -30,8 +55,20 @@ export class UserController {
   /**
    * GET /api/user/books (or public books)
    */
-  static async getBooks(_req: AuthenticatedRequest, res: Response): Promise<void> {
+  static async getBooks(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
+      if (req.user?.sub) {
+        const user = await User.findById(req.user.sub)
+        if (user && user.status === 'waiting') {
+          res.status(403).json({
+            success: false,
+            waiting: true,
+            error: 'You are on waiting list, Request admin for approval',
+          })
+          return
+        }
+      }
+
       const books = await UserService.getBooks()
       res.status(200).json({
         success: true,
@@ -53,6 +90,16 @@ export class UserController {
     try {
       if (!req.user?.sub) {
         res.status(401).json({ success: false, error: 'Unauthorized' })
+        return
+      }
+
+      const user = await User.findById(req.user.sub)
+      if (user && user.status === 'waiting') {
+        res.status(403).json({
+          success: false,
+          waiting: true,
+          error: 'You are on waiting list, Request admin for approval',
+        })
         return
       }
 
@@ -80,6 +127,16 @@ export class UserController {
     try {
       if (!req.user?.sub) {
         res.status(401).json({ success: false, error: 'Unauthorized' })
+        return
+      }
+
+      const user = await User.findById(req.user.sub)
+      if (user && user.status === 'waiting') {
+        res.status(403).json({
+          success: false,
+          waiting: true,
+          error: 'You are on waiting list, Request admin for approval',
+        })
         return
       }
 
