@@ -455,6 +455,14 @@ export class AdminService {
   }
 
   /**
+   * Clear all admin notifications
+   */
+  static async clearAllNotifications() {
+    await Notification.deleteMany({ recipient: 'admin' });
+    return { success: true, unreadCount: 0 };
+  }
+
+  /**
    * Get user requests with search, filter, and sorting
    */
   static async getUserRequests(params?: {
@@ -544,23 +552,18 @@ export class AdminService {
   }
 
   /**
-   * Get pending request counts across all 4 request categories for tab badges
+   * Get pending request counts for waiting list
    */
   static async getAdminRequestsCounts() {
-    const [usersWaiting, borrowPending, extensionPending, returnPending] = await Promise.all([
-      User.countDocuments({ status: 'waiting' }),
-      History.countDocuments({ status: 'borrow_pending' }),
-      History.countDocuments({ extensionStatus: 'pending' }),
-      History.countDocuments({ status: 'return_pending' }),
-    ]);
+    const usersWaiting = await User.countDocuments({ status: 'waiting' });
 
     return {
       users: usersWaiting,
       waiting: usersWaiting,
-      borrow: borrowPending,
-      extension: extensionPending,
-      return: returnPending,
-      totalPending: usersWaiting + borrowPending + extensionPending + returnPending,
+      borrow: 0,
+      extension: 0,
+      return: 0,
+      totalPending: usersWaiting,
     };
   }
 
