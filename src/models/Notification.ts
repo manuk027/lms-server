@@ -3,7 +3,13 @@ import { Document, Model, Schema, Types, model } from 'mongoose'
 export interface INotification extends Document {
   title: string
   message: string
-  type: 'user_registration' | 'system' | 'general'
+  type:
+    | 'user_registration'
+    | 'borrow_request'
+    | 'extension_request'
+    | 'return_request'
+    | 'system'
+    | 'general'
   recipient: string
   read: boolean
   link?: string
@@ -26,7 +32,14 @@ const notificationSchema = new Schema<INotification>(
     },
     type: {
       type: String,
-      enum: ['user_registration', 'system', 'general'],
+      enum: [
+        'user_registration',
+        'borrow_request',
+        'extension_request',
+        'return_request',
+        'system',
+        'general',
+      ],
       default: 'user_registration',
     },
     recipient: {
