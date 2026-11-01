@@ -335,6 +335,26 @@ export class AdminController {
   }
 
   /**
+   * Clear all admin notifications
+   * DELETE /api/admin/notifications
+   */
+  static async clearAllNotifications(
+    _req: AuthenticatedAdminRequest,
+    res: Response
+  ): Promise<void> {
+    try {
+      const data = await AdminService.clearAllNotifications()
+      res.status(200).json(data)
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Failed to clear notifications'
+      res.status(500).json({
+        success: false,
+        error: message,
+      })
+    }
+  }
+
+  /**
    * Get user registration requests with search, filter, and sorting
    * GET /api/admin/requests
    */
