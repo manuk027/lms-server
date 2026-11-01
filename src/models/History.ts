@@ -1,7 +1,17 @@
 import { Document, Model, Schema, Types, model } from 'mongoose'
-import { ALLOWED_LOAN_STATUSES, HistoryValidators, ValidLoanStatus, } from '../validators'
+import {
+  ALLOWED_EXTENSION_STATUSES,
+  ALLOWED_LOAN_STATUSES,
+  ALLOWED_READING_STATUSES,
+  HistoryValidators,
+  ValidExtensionStatus,
+  ValidLoanStatus,
+  ValidReadingStatus,
+} from '../validators'
 
 export type LoanStatus = ValidLoanStatus
+export type ExtensionStatus = ValidExtensionStatus
+export type ReadingStatus = ValidReadingStatus
 
 export interface IHistory extends Document {
   user: Types.ObjectId
@@ -11,6 +21,18 @@ export interface IHistory extends Document {
   returnedAt?: Date | null
   status: LoanStatus
   remarks?: string
+  // Extension Request fields
+  extensionStatus: ExtensionStatus
+  extensionRequestedAt?: Date
+  extensionApprovedAt?: Date
+  extensionDays?: number
+  extensionReason?: string
+  // Return, Review & Reading Status fields
+  readingStatus?: ReadingStatus
+  rating?: number
+  review?: string
+  reviewedAt?: Date
+  adminRemarks?: string
   createdAt: Date
   updatedAt: Date
 }
@@ -37,6 +59,7 @@ const historySchema = new Schema<IHistory>(
     },
     dueDate: {
       type: Date,
+      index: true,
     },
     returnedAt: {
       type: Date,
@@ -49,11 +72,60 @@ const historySchema = new Schema<IHistory>(
         values: ALLOWED_LOAN_STATUSES,
         message: '{VALUE} is not a valid loan status',
       },
-      default: 'borrowed',
+      default: 'borrow_pending',
       index: true,
       validate: HistoryValidators.statusValidator,
     },
     remarks: {
+      type: String,
+      trim: true,
+    },
+    // Loan Extension
+    extensionStatus: {
+      type: String,
+      enum: {
+        values: ALLOWED_EXTENSION_STATUSES,
+        message: '{VALUE} is not a valid extension status',
+      },
+      default: 'none',
+      index: true,
+    },
+    extensionRequestedAt: {
+      type: Date,
+    },
+    extensionApprovedAt: {
+      type: Date,
+    },
+    extensionDays: {
+      type: Number,
+      default: 7,
+    },
+    extensionReason: {
+      type: String,
+      trim: true,
+    },
+    // Reading status and review
+    readingStatus: {
+      type: String,
+      enum: {
+        values: ALLOWED_READING_STATUSES,
+        message: '{VALUE} is not a valid reading status',
+      },
+      index: true,
+    },
+    rating: {
+      type: Number,
+      min: 1,
+      max: 5,
+    },
+    review: {
+      type: String,
+      trim: true,
+    },
+    reviewedAt: {
+      type: Date,
+    },
+    adminRemarks: {
       type: String,
       trim: true,
     },
@@ -65,18 +137,11 @@ const historySchema = new Schema<IHistory>(
   }
 )
 
-// Compound indexes for optimal querying of:
-// 1. A user's complete borrowing history sorted by most recent
+// Compound indexes
 historySchema.index({ user: 1, borrowedAt: -1 })
-
-// 2. A book's complete circulation history (who borrowed it and when) sorted by most recent
 historySchema.index({ book: 1, borrowedAt: -1 })
-
-// 3. Active unreturned books by user
 historySchema.index({ user: 1, status: 1 })
-
-// 4. Currently borrowed books
 historySchema.index({ book: 1, status: 1 })
+historySchema.index({ extensionStatus: 1, createdAt: -1 })
 
 export const History: Model<IHistory> = model<IHistory>('History', historySchema)
-

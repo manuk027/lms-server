@@ -16,6 +16,8 @@ export interface IBook extends Document {
   imageCaption?: string
   isbn?: string
   notes?: string
+  averageRating?: number
+  ratingsCount?: number
   createdAt: Date
   updatedAt: Date
 }
@@ -103,6 +105,17 @@ const bookSchema = new Schema<IBook>(
       type: String,
       trim: true,
       default: '',
+    },
+    averageRating: {
+      type: Number,
+      default: 0,
+      min: 0,
+      max: 5,
+    },
+    ratingsCount: {
+      type: Number,
+      default: 0,
+      min: 0,
     },
   },
   {

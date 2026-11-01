@@ -7,9 +7,13 @@ import { Book } from '../models/Book'
 import { History } from '../models/History'
 import { Notification } from '../models/Notification'
 import { Publisher } from '../models/Publisher'
+import { Review } from '../models/Review'
 import { User } from '../models/User'
 import { AdminValidators } from '../validators/admin.validator'
 import { BookValidators } from '../validators'
+
+const BORROW_DAYS = parseInt(process.env.BORROW_DURATION_DAYS || '7', 10)
+const EXTENSION_DAYS = parseInt(process.env.EXTENSION_DURATION_DAYS || '7', 10)
 
 
 export interface AdminTokenPayload {
@@ -537,5 +541,425 @@ export class AdminService {
     }
 
     return user;
+  }
+
+  /**
+   * Get pending request counts across all 4 request categories for tab badges
+   */
+  static async getAdminRequestsCounts() {
+    const [usersWaiting, borrowPending, extensionPending, returnPending] = await Promise.all([
+      User.countDocuments({ status: 'waiting' }),
+      History.countDocuments({ status: 'borrow_pending' }),
+      History.countDocuments({ extensionStatus: 'pending' }),
+      History.countDocuments({ status: 'return_pending' }),
+    ]);
+
+    return {
+      users: usersWaiting,
+      waiting: usersWaiting,
+      borrow: borrowPending,
+      extension: extensionPending,
+      return: returnPending,
+      totalPending: usersWaiting + borrowPending + extensionPending + returnPending,
+    };
+  }
+
+  /**
+   * Get borrow requests with status filter, search, and sorting
+   */
+  static async getBorrowRequests(params?: {
+    status?: string;
+    search?: string;
+    sortBy?: string;
+  }) {
+    const filter: Record<string, any> = {};
+
+    if (params?.status && params.status !== 'all') {
+      if (params.status === 'pending') {
+        filter.status = 'borrow_pending';
+      } else if (params.status === 'approved') {
+        filter.status = { $in: ['borrowed', 'return_pending', 'returned'] };
+      } else if (params.status === 'rejected') {
+        filter.status = 'borrow_rejected';
+      } else {
+        filter.status = params.status;
+      }
+    } else {
+      // By default all borrow-related records
+      filter.status = { $in: ['borrow_pending', 'borrowed', 'borrow_rejected', 'return_pending', 'returned'] };
+    }
+
+    let sort: Record<string, any> = { createdAt: -1 };
+    if (params?.sortBy === 'date-asc') {
+      sort = { createdAt: 1 };
+    }
+
+    let query = History.find(filter)
+      .populate('user', 'fullName email phoneNo avatar status')
+      .populate({
+        path: 'book',
+        populate: [
+          { path: 'publisher', select: 'name' },
+          { path: 'authors', select: 'name category' },
+        ],
+      })
+      .sort(sort);
+
+    let requests = await query;
+
+    // In-memory search across populated fields if search param is provided
+    if (params?.search && params.search.trim()) {
+      const q = params.search.trim().toLowerCase();
+      requests = requests.filter((r: any) => {
+        const u = r.user;
+        const b = r.book;
+        const userMatches =
+          (u?.fullName && u.fullName.toLowerCase().includes(q)) ||
+          (u?.email && u.email.toLowerCase().includes(q)) ||
+          (u?.phoneNo && u.phoneNo.toLowerCase().includes(q));
+        const bookMatches =
+          (b?.bookName && b.bookName.toLowerCase().includes(q)) ||
+          (b?.bookCode && b.bookCode.toLowerCase().includes(q)) ||
+          (b?.category && b.category.toLowerCase().includes(q));
+        return userMatches || bookMatches;
+      });
+    }
+
+    const pendingCount = await History.countDocuments({ status: 'borrow_pending' });
+    const approvedCount = await History.countDocuments({
+      status: { $in: ['borrowed', 'return_pending', 'returned'] },
+    });
+    const rejectedCount = await History.countDocuments({ status: 'borrow_rejected' });
+
+    return {
+      requests,
+      counts: {
+        pending: pendingCount,
+        approved: approvedCount,
+        rejected: rejectedCount,
+        total: pendingCount + approvedCount + rejectedCount,
+      },
+    };
+  }
+
+  /**
+   * Approve or reject a user borrow request
+   */
+  static async updateBorrowRequestStatus(
+    loanId: string,
+    status: 'approved' | 'rejected',
+    remarks?: string
+  ) {
+    const loan = await History.findById(loanId).populate('book').populate('user');
+    if (!loan) {
+      throw new Error('Borrow request not found');
+    }
+
+    if (loan.status !== 'borrow_pending') {
+      throw new Error(`Cannot change status: request is already ${loan.status}`);
+    }
+
+    if (status === 'approved') {
+      const book = await Book.findById(loan.book._id || loan.book);
+      if (!book) {
+        throw new Error('Book associated with request was not found');
+      }
+
+      if (book.available === false || (book.noOfCopies !== undefined && book.noOfCopies <= 0)) {
+        throw new Error('Cannot approve: book is currently out of stock or unavailable');
+      }
+
+      // Deduct inventory
+      if (book.noOfCopies !== undefined && book.noOfCopies > 0) {
+        book.noOfCopies -= 1;
+        if (book.noOfCopies === 0) {
+          book.available = false;
+        }
+      } else {
+        book.available = false;
+      }
+      await book.save();
+
+      loan.status = 'borrowed';
+      loan.borrowedAt = new Date();
+      loan.dueDate = new Date(Date.now() + BORROW_DAYS * 86400000);
+      loan.remarks = remarks ? remarks.trim() : '';
+    } else {
+      loan.status = 'borrow_rejected';
+      loan.adminRemarks = remarks ? remarks.trim() : 'Request rejected by librarian';
+    }
+
+    await loan.save();
+
+    // Mark related notifications as read
+    try {
+      await Notification.updateMany(
+        { link: { $regex: 'tab=borrow' }, read: false, userId: loan.user?._id },
+        { read: true }
+      );
+    } catch {}
+
+    return loan;
+  }
+
+  /**
+   * Get extension requests with filter, search, and sorting
+   */
+  static async getExtensionRequests(params?: {
+    status?: string;
+    search?: string;
+    sortBy?: string;
+  }) {
+    const filter: Record<string, any> = {};
+
+    if (params?.status && params.status !== 'all') {
+      filter.extensionStatus = params.status;
+    } else {
+      filter.extensionStatus = { $in: ['pending', 'approved', 'rejected'] };
+    }
+
+    let sort: Record<string, any> = { extensionRequestedAt: -1, updatedAt: -1 };
+    if (params?.sortBy === 'date-asc') {
+      sort = { extensionRequestedAt: 1, updatedAt: 1 };
+    }
+
+    let requests = await History.find(filter)
+      .populate('user', 'fullName email phoneNo avatar status')
+      .populate({
+        path: 'book',
+        populate: [
+          { path: 'publisher', select: 'name' },
+          { path: 'authors', select: 'name category' },
+        ],
+      })
+      .sort(sort);
+
+    if (params?.search && params.search.trim()) {
+      const q = params.search.trim().toLowerCase();
+      requests = requests.filter((r: any) => {
+        const u = r.user;
+        const b = r.book;
+        const userMatches =
+          (u?.fullName && u.fullName.toLowerCase().includes(q)) ||
+          (u?.email && u.email.toLowerCase().includes(q)) ||
+          (u?.phoneNo && u.phoneNo.toLowerCase().includes(q));
+        const bookMatches =
+          (b?.bookName && b.bookName.toLowerCase().includes(q)) ||
+          (b?.bookCode && b.bookCode.toLowerCase().includes(q)) ||
+          (b?.category && b.category.toLowerCase().includes(q));
+        return userMatches || bookMatches;
+      });
+    }
+
+    const pendingCount = await History.countDocuments({ extensionStatus: 'pending' });
+    const approvedCount = await History.countDocuments({ extensionStatus: 'approved' });
+    const rejectedCount = await History.countDocuments({ extensionStatus: 'rejected' });
+
+    return {
+      requests,
+      counts: {
+        pending: pendingCount,
+        approved: approvedCount,
+        rejected: rejectedCount,
+        total: pendingCount + approvedCount + rejectedCount,
+      },
+    };
+  }
+
+  /**
+   * Approve or reject a loan extension request
+   */
+  static async updateExtensionRequestStatus(
+    loanId: string,
+    status: 'approved' | 'rejected',
+    remarks?: string
+  ) {
+    const loan = await History.findById(loanId).populate('book').populate('user');
+    if (!loan) {
+      throw new Error('Extension request not found');
+    }
+
+    if (loan.extensionStatus !== 'pending') {
+      throw new Error(`Cannot change status: extension is already ${loan.extensionStatus}`);
+    }
+
+    if (status === 'approved') {
+      loan.extensionStatus = 'approved';
+      loan.extensionApprovedAt = new Date();
+      const extraDays = loan.extensionDays || EXTENSION_DAYS;
+      const baseDueDate = loan.dueDate ? new Date(loan.dueDate).getTime() : Date.now();
+      loan.dueDate = new Date(baseDueDate + extraDays * 86400000);
+      loan.adminRemarks = remarks ? remarks.trim() : '';
+    } else {
+      loan.extensionStatus = 'rejected';
+      loan.adminRemarks = remarks ? remarks.trim() : 'Extension request rejected';
+    }
+
+    await loan.save();
+
+    try {
+      await Notification.updateMany(
+        { link: { $regex: 'tab=extension' }, read: false, userId: loan.user?._id },
+        { read: true }
+      );
+    } catch {}
+
+    return loan;
+  }
+
+  /**
+   * Get return requests with filter, search, and sorting
+   */
+  static async getReturnRequests(params?: {
+    status?: string;
+    search?: string;
+    sortBy?: string;
+  }) {
+    const filter: Record<string, any> = {};
+
+    if (params?.status && params.status !== 'all') {
+      if (params.status === 'pending') {
+        filter.status = 'return_pending';
+      } else if (params.status === 'approved') {
+        filter.status = 'returned';
+      } else {
+        filter.status = params.status;
+      }
+    } else {
+      filter.status = { $in: ['return_pending', 'returned'] };
+    }
+
+    let sort: Record<string, any> = { updatedAt: -1 };
+    if (params?.sortBy === 'date-asc') {
+      sort = { updatedAt: 1 };
+    }
+
+    let requests = await History.find(filter)
+      .populate('user', 'fullName email phoneNo avatar status')
+      .populate({
+        path: 'book',
+        populate: [
+          { path: 'publisher', select: 'name' },
+          { path: 'authors', select: 'name category' },
+        ],
+      })
+      .sort(sort);
+
+    if (params?.search && params.search.trim()) {
+      const q = params.search.trim().toLowerCase();
+      requests = requests.filter((r: any) => {
+        const u = r.user;
+        const b = r.book;
+        const userMatches =
+          (u?.fullName && u.fullName.toLowerCase().includes(q)) ||
+          (u?.email && u.email.toLowerCase().includes(q)) ||
+          (u?.phoneNo && u.phoneNo.toLowerCase().includes(q));
+        const bookMatches =
+          (b?.bookName && b.bookName.toLowerCase().includes(q)) ||
+          (b?.bookCode && b.bookCode.toLowerCase().includes(q)) ||
+          (b?.category && b.category.toLowerCase().includes(q));
+        return userMatches || bookMatches;
+      });
+    }
+
+    const pendingCount = await History.countDocuments({ status: 'return_pending' });
+    const approvedCount = await History.countDocuments({ status: 'returned' });
+
+    return {
+      requests,
+      counts: {
+        pending: pendingCount,
+        approved: approvedCount,
+        rejected: 0,
+        total: pendingCount + approvedCount,
+      },
+    };
+  }
+
+  /**
+   * Approve or reject a book return request
+   */
+  static async updateReturnRequestStatus(
+    loanId: string,
+    status: 'approved' | 'rejected',
+    remarks?: string
+  ) {
+    const loan = await History.findById(loanId).populate('book').populate('user');
+    if (!loan) {
+      throw new Error('Return request not found');
+    }
+
+    if (loan.status !== 'return_pending') {
+      throw new Error(`Cannot change status: return is already ${loan.status}`);
+    }
+
+    if (status === 'approved') {
+      loan.status = 'returned';
+      loan.returnedAt = new Date();
+      loan.adminRemarks = remarks ? remarks.trim() : '';
+
+      // Restore book inventory
+      const book = await Book.findById(loan.book._id || loan.book);
+      if (book) {
+        book.noOfCopies = (book.noOfCopies || 0) + 1;
+        book.available = true;
+        await book.save();
+      }
+
+      // If user submitted rating/review, persist in Review collection and recompute average
+      if (loan.rating) {
+        try {
+          const bookId = loan.book._id || loan.book;
+          await Review.findOneAndUpdate(
+            { user: loan.user._id || loan.user, book: bookId },
+            {
+              user: loan.user._id || loan.user,
+              book: bookId,
+              history: loan._id,
+              rating: loan.rating,
+              review: loan.review || '',
+              readingStatus: loan.readingStatus || 'completed',
+            },
+            { upsert: true, new: true }
+          );
+
+          const stats = await Review.aggregate([
+            { $match: { book: bookId } },
+            {
+              $group: {
+                _id: '$book',
+                averageRating: { $avg: '$rating' },
+                ratingsCount: { $sum: 1 },
+              },
+            },
+          ]);
+
+          if (stats.length > 0) {
+            const avg = Math.round(stats[0].averageRating * 10) / 10;
+            await Book.findByIdAndUpdate(bookId, {
+              averageRating: avg,
+              ratingsCount: stats[0].ratingsCount,
+            });
+          }
+        } catch (revErr) {
+          console.warn('Could not sync review on return approval:', revErr);
+        }
+      }
+    } else {
+      // If rejected, book remains in borrowed state with admin remarks
+      loan.status = 'borrowed';
+      loan.adminRemarks = remarks ? remarks.trim() : 'Return unapproved by librarian';
+    }
+
+    await loan.save();
+
+    try {
+      await Notification.updateMany(
+        { link: { $regex: 'tab=return' }, read: false, userId: loan.user?._id },
+        { read: true }
+      );
+    } catch {}
+
+    return loan;
   }
 }

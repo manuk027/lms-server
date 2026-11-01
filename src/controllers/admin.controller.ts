@@ -396,4 +396,209 @@ export class AdminController {
       })
     }
   }
+
+  /**
+   * GET /api/admin/requests/counts
+   */
+  static async getRequestsCounts(
+    _req: AuthenticatedAdminRequest,
+    res: Response
+  ): Promise<void> {
+    try {
+      const counts = await AdminService.getAdminRequestsCounts()
+      res.status(200).json({
+        success: true,
+        counts,
+      })
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Failed to fetch request counts'
+      res.status(500).json({
+        success: false,
+        error: message,
+      })
+    }
+  }
+
+  /**
+   * GET /api/admin/requests/borrow
+   */
+  static async getBorrowRequests(
+    req: AuthenticatedAdminRequest,
+    res: Response
+  ): Promise<void> {
+    try {
+      const { status, search, sortBy } = req.query
+      const data = await AdminService.getBorrowRequests({
+        status: status as string,
+        search: search as string,
+        sortBy: sortBy as string,
+      })
+      res.status(200).json({
+        success: true,
+        ...data,
+      })
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Failed to fetch borrow requests'
+      res.status(500).json({
+        success: false,
+        error: message,
+      })
+    }
+  }
+
+  /**
+   * PATCH /api/admin/requests/borrow/:id
+   */
+  static async updateBorrowRequest(
+    req: AuthenticatedAdminRequest,
+    res: Response
+  ): Promise<void> {
+    try {
+      const { id } = req.params
+      const { status, remarks } = req.body
+
+      if (!['approved', 'rejected'].includes(status)) {
+        res.status(400).json({
+          success: false,
+          error: 'Status must be approved or rejected',
+        })
+        return
+      }
+
+      const loan = await AdminService.updateBorrowRequestStatus(id as string, status, remarks)
+      res.status(200).json({
+        success: true,
+        message: `Borrow request ${status} successfully`,
+        loan,
+      })
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Failed to update borrow request'
+      res.status(400).json({
+        success: false,
+        error: message,
+      })
+    }
+  }
+
+  /**
+   * GET /api/admin/requests/extension
+   */
+  static async getExtensionRequests(
+    req: AuthenticatedAdminRequest,
+    res: Response
+  ): Promise<void> {
+    try {
+      const { status, search, sortBy } = req.query
+      const data = await AdminService.getExtensionRequests({
+        status: status as string,
+        search: search as string,
+        sortBy: sortBy as string,
+      })
+      res.status(200).json({
+        success: true,
+        ...data,
+      })
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Failed to fetch extension requests'
+      res.status(500).json({
+        success: false,
+        error: message,
+      })
+    }
+  }
+
+  /**
+   * PATCH /api/admin/requests/extension/:id
+   */
+  static async updateExtensionRequest(
+    req: AuthenticatedAdminRequest,
+    res: Response
+  ): Promise<void> {
+    try {
+      const { id } = req.params
+      const { status, remarks } = req.body
+
+      if (!['approved', 'rejected'].includes(status)) {
+        res.status(400).json({
+          success: false,
+          error: 'Status must be approved or rejected',
+        })
+        return
+      }
+
+      const loan = await AdminService.updateExtensionRequestStatus(id as string, status, remarks)
+      res.status(200).json({
+        success: true,
+        message: `Extension request ${status} successfully`,
+        loan,
+      })
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Failed to update extension request'
+      res.status(400).json({
+        success: false,
+        error: message,
+      })
+    }
+  }
+
+  /**
+   * GET /api/admin/requests/return
+   */
+  static async getReturnRequests(
+    req: AuthenticatedAdminRequest,
+    res: Response
+  ): Promise<void> {
+    try {
+      const { status, search, sortBy } = req.query
+      const data = await AdminService.getReturnRequests({
+        status: status as string,
+        search: search as string,
+        sortBy: sortBy as string,
+      })
+      res.status(200).json({
+        success: true,
+        ...data,
+      })
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Failed to fetch return requests'
+      res.status(500).json({
+        success: false,
+        error: message,
+      })
+    }
+  }
+
+  /**
+   * PATCH /api/admin/requests/return/:id
+   */
+  static async updateReturnRequest(
+    req: AuthenticatedAdminRequest,
+    res: Response
+  ): Promise<void> {
+    try {
+      const { id } = req.params
+      const { status, remarks } = req.body
+
+      if (!['approved', 'rejected'].includes(status)) {
+        res.status(400).json({
+          success: false,
+          error: 'Status must be approved or rejected',
+        })
+        return
+      }
+
+      const loan = await AdminService.updateReturnRequestStatus(id as string, status, remarks)
+      res.status(200).json({
+        success: true,
+        message: `Return request ${status} successfully`,
+        loan,
+      })
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Failed to update return request'
+      res.status(400).json({
+        success: false,
+        error: message,
+      })
+    }
+  }
 }
