@@ -72,6 +72,12 @@ const bookSchema = new Schema<IBook>(
       required: [true, 'Number of pages is required'],
       validate: BookValidators.pageCountValidator,
     },
+    noOfCopies: {
+      type: Number,
+      required: [true, 'Number of copies is required'],
+      default: 1,
+      validate: BookValidators.noOfCopiesValidator,
+    },
     available: {
       type: Boolean,
       default: true,

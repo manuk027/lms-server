@@ -345,6 +345,14 @@ export class AdminService {
       }
       book.noOfPages = parsedPages;
     }
+    // 6b. Number of Copies
+    if (input.noOfCopies !== undefined) {
+      const parsedCopies = typeof input.noOfCopies === "number" ? input.noOfCopies : parseInt(String(input.noOfCopies || "1"), 10);
+      if (isNaN(parsedCopies) || parsedCopies < 1) {
+        throw new Error("Number of copies must be at least 1.");
+      }
+      book.noOfCopies = parsedCopies;
+    }
     // 7. Book Code 
     if (input.bookCode !== undefined) {
       const newCode = input.bookCode.trim().toUpperCase();
