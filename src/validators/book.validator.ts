@@ -16,8 +16,8 @@ export const BookValidators = {
   isValidShelf(shelf: unknown): boolean {
     return typeof shelf === 'string' && shelf.trim().length > 0
   },
-  isValidCopies(copies : number) :  boolean {
-    return typeof copies === 'number' && copies >= 1
+  isValidCopies(copies: unknown): boolean {
+    return typeof copies === 'number' && Number.isInteger(copies) && copies >= 0
   },
 
    isValidLanguage(language: unknown): boolean {
@@ -44,9 +44,9 @@ export const BookValidators = {
     validator: (language: string) => BookValidators.isValidLanguage(language),
     message: 'Language must be at least 2 characters long',
   },
-  noOfCopiesValidator : {
-    validator : (copies : number) => BookValidators.isValidCopies(copies),
-    message : 'Atleast 1 copy is required'
-  }
+  noOfCopiesValidator: {
+    validator: (copies: number) => BookValidators.isValidCopies(copies),
+    message: 'Number of copies must be a non-negative integer (0 or greater)',
+  },
   
 }

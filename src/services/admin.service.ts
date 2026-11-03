@@ -383,6 +383,159 @@ export class AdminService {
   }
 
   /**
+   * Find a book in the library catalog by ISBN or accession code
+   */
+  static async getBookByIsbn(rawIsbn: string) {
+    const trimmed = (rawIsbn || '').trim();
+    if (!trimmed) return null;
+    const cleanDigits = trimmed.replace(/[^0-9xX]/g, '');
+
+    // 1. Direct query by exact isbn or bookCode
+    let book = await Book.findOne({
+      $or: [
+        { isbn: trimmed },
+        { bookCode: trimmed.toUpperCase() },
+      ],
+    })
+      .populate('publisher', 'name')
+      .populate('authors', 'name category');
+
+    // 2. If not found and has at least 8 digits, query with hyphen-tolerant regex
+    if (!book && cleanDigits.length >= 8) {
+      const regexPattern = cleanDigits.split('').join('[- ]?');
+      book = await Book.findOne({
+        isbn: { $regex: regexPattern, $options: 'i' },
+      })
+        .populate('publisher', 'name')
+        .populate('authors', 'name category');
+    }
+
+    return book;
+  }
+
+  /**
+   * Admin issue / borrow a book to a registered library patron
+   */
+  static async borrowBook(bookId: string, userId: string, dueDate?: string | Date) {
+    if (!bookId) throw new Error('Book ID is required');
+    if (!userId) throw new Error('User ID is required');
+
+    const book = await Book.findById(bookId);
+    if (!book) throw new Error('Book not found in library database');
+
+    const currentCopies = typeof book.noOfCopies === 'number' ? book.noOfCopies : (book.available ? 1 : 0);
+    if (currentCopies < 1) {
+      throw new Error(`Cannot borrow "${book.bookName}". No copies are currently available in inventory.`);
+    }
+
+    const user = await User.findById(userId);
+    if (!user) throw new Error('Selected patron / user not found');
+    if (user.status === 'rejected') {
+      throw new Error(`Cannot issue book to user "${user.fullName}" whose account status is rejected.`);
+    }
+
+    // Check if user already holds an active loan of this book
+    const existingLoan = await History.findOne({
+      user: userId,
+      book: bookId,
+      status: { $in: ['borrowed', 'overdue'] },
+    });
+    if (existingLoan) {
+      throw new Error(`Patron "${user.fullName}" is already holding an active copy of this book.`);
+    }
+
+    const now = new Date();
+    const defaultDueDate = new Date(now.getTime() + 14 * 24 * 60 * 60 * 1000); // 14 days standard
+
+    const loan = await History.create({
+      user: userId,
+      book: bookId,
+      borrowedAt: now,
+      dueDate: dueDate ? new Date(dueDate) : defaultDueDate,
+      status: 'borrowed',
+      extensionStatus: 'none',
+    });
+
+    // Decrement copies and mark unavailable when qty reaches 0
+    const updatedCopies = Math.max(0, currentCopies - 1);
+    book.noOfCopies = updatedCopies;
+    book.available = updatedCopies > 0;
+    await book.save();
+
+    await book.populate('publisher', 'name');
+    await book.populate('authors', 'name category');
+    await loan.populate('user', 'fullName email phoneNo');
+    await loan.populate('book', 'bookName bookCode shelf isbn');
+
+    return {
+      loan,
+      book,
+    };
+  }
+
+  /**
+   * Get active borrowers for a specific book
+   */
+  static async getBookBorrowers(bookId: string) {
+    if (!bookId) throw new Error('Book ID is required');
+
+    const loans = await History.find({
+      book: bookId,
+      status: { $in: ['borrowed', 'overdue', 'return_pending'] },
+    })
+      .populate('user', 'fullName email phoneNo avatar status')
+      .sort({ borrowedAt: -1 });
+
+    return loans;
+  }
+
+  /**
+   * Admin process return of a book from a patron
+   */
+  static async returnBook(bookId: string, loanId?: string, userId?: string) {
+    if (!bookId) throw new Error('Book ID is required');
+
+    let query: any = {
+      book: bookId,
+      status: { $in: ['borrowed', 'overdue', 'return_pending'] },
+    };
+
+    if (loanId) {
+      query._id = loanId;
+    } else if (userId) {
+      query.user = userId;
+    }
+
+    const loan = await History.findOne(query).populate('user', 'fullName email phoneNo');
+    if (!loan) {
+      throw new Error('No active borrow record found for this book and patron');
+    }
+
+    loan.status = 'returned';
+    loan.returnedAt = new Date();
+    await loan.save();
+
+    const book = await Book.findById(bookId);
+    if (!book) {
+      throw new Error('Book not found in library database');
+    }
+
+    // Increment available copies by 1 and ensure available is true
+    const currentCopies = typeof book.noOfCopies === 'number' ? book.noOfCopies : 0;
+    book.noOfCopies = currentCopies + 1;
+    book.available = true;
+    await book.save();
+
+    await book.populate('publisher', 'name');
+    await book.populate('authors', 'name category');
+
+    return {
+      loan,
+      book,
+    };
+  }
+
+  /**
    * Get all registered library users / patrons
    */
   static async getUsers() {

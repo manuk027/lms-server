@@ -150,6 +150,108 @@ export class AdminController {
   }
 
   /**
+   * Search / Find book by ISBN in catalog
+   * GET /api/admin/books/isbn/:isbn
+   */
+  static async getBookByIsbn(
+    req: AuthenticatedAdminRequest,
+    res: Response
+  ): Promise<void> {
+    try {
+      const isbn = String(req.params.isbn || '')
+      const book = await AdminService.getBookByIsbn(isbn)
+      res.status(200).json({
+        success: true,
+        book,
+      })
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Failed to retrieve book by ISBN'
+      res.status(500).json({
+        success: false,
+        error: message,
+      })
+    }
+  }
+
+  /**
+   * Admin issue / borrow a book to a patron
+   * POST /api/admin/books/:id/borrow
+   */
+  static async borrowBook(
+    req: AuthenticatedAdminRequest,
+    res: Response
+  ): Promise<void> {
+    try {
+      const bookId = String(req.params.id || '')
+      const { userId, dueDate } = req.body
+      const result = await AdminService.borrowBook(bookId, userId, dueDate)
+      res.status(200).json({
+        success: true,
+        message: 'Book successfully issued to patron',
+        loan: result.loan,
+        book: result.book,
+      })
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Failed to issue book'
+      res.status(400).json({
+        success: false,
+        error: message,
+      })
+    }
+  }
+
+  /**
+   * Get active borrowers for a book
+   * GET /api/admin/books/:id/borrowers
+   */
+  static async getBookBorrowers(
+    req: AuthenticatedAdminRequest,
+    res: Response
+  ): Promise<void> {
+    try {
+      const bookId = String(req.params.id || '')
+      const borrowers = await AdminService.getBookBorrowers(bookId)
+      res.status(200).json({
+        success: true,
+        borrowers,
+      })
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Failed to retrieve book borrowers'
+      res.status(500).json({
+        success: false,
+        error: message,
+      })
+    }
+  }
+
+  /**
+   * Admin process book return
+   * POST /api/admin/books/:id/return
+   */
+  static async returnBook(
+    req: AuthenticatedAdminRequest,
+    res: Response
+  ): Promise<void> {
+    try {
+      const bookId = String(req.params.id || '')
+      const { loanId, userId } = req.body || {}
+      const result = await AdminService.returnBook(bookId, loanId, userId)
+      res.status(200).json({
+        success: true,
+        message: 'Book returned successfully',
+        loan: result.loan,
+        book: result.book,
+      })
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Failed to return book'
+      res.status(400).json({
+        success: false,
+        error: message,
+      })
+    }
+  }
+
+  /**
    * Get all registered users / patrons
    * GET /api/admin/users
    */
