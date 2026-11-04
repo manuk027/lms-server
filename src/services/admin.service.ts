@@ -123,10 +123,12 @@ export class AdminService {
    * Get sample dashboard metrics and circulation stats
    */
   static async getDashboardStats() {
-    const [totalBooks, availableBooks, totalUsers, activeLoans, overdueLoans, recentActivity] = await Promise.all([
+    await AdminService.checkAndUpdateExpiredFees();
+    const [totalBooks, availableBooks, totalUsers, unpaidUsers, activeLoans, overdueLoans, recentActivity] = await Promise.all([
       Book.countDocuments(),
       Book.countDocuments({ available: true }),
       User.countDocuments(),
+      User.countDocuments({ feesStatus: { $ne: 'paid' } }),
       History.countDocuments({ status: "borrowed" }),
       History.countDocuments({ status: "overdue" }),
       History.find().sort({ borrowedAt: -1 }).limit(6).populate("user", "fullName email").populate("book", "bookName bookCode shelf"),
@@ -138,6 +140,7 @@ export class AdminService {
         availableBooks,
         borrowedBooks: totalBooks - availableBooks,
         totalUsers,
+        unpaidUsers,
         activeLoans,
         overdueLoans,
       },
