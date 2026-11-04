@@ -564,16 +564,47 @@ export class AdminService {
   }
 
   /**
+   * Helper to automatically update expired fees for users whose 365 days have elapsed.
+   * Also ensures all users without feesStatus explicitly default to 'unpaid'.
+   */
+  static async checkAndUpdateExpiredFees() {
+    const now = new Date();
+    // 1. Mark unpaid for users whose 365 days from payment have passed
+    await User.updateMany(
+      {
+        feesStatus: 'paid',
+        $or: [
+          { feesExpiresAt: { $ne: null, $lte: now } },
+          { feesPaidAt: { $ne: null, $lte: new Date(now.getTime() - 365 * 24 * 60 * 60 * 1000) } },
+        ],
+      },
+      {
+        $set: {
+          feesStatus: 'unpaid',
+          feesExpiresAt: null,
+        },
+      }
+    );
+
+    // 2. Ensure existing users without feesStatus default to 'unpaid'
+    await User.updateMany(
+      { feesStatus: { $in: [null, undefined] } },
+      { $set: { feesStatus: 'unpaid', feesExpiresAt: null, feesPaidAt: null } }
+    );
+  }
+
+  /**
    * Get all registered library users / patrons
    */
   static async getUsers() {
+    await AdminService.checkAndUpdateExpiredFees();
     return User.find().sort({ createdAt: -1 });
   }
 
   /**
    * Admin create a new library patron with name and phone number
    */
-  static async createUser(input: { fullName: string; phoneNo: string; email?: string }) {
+  static async createUser(input: { fullName: string; phoneNo: string; email?: string; feesStatus?: 'paid' | 'unpaid' }) {
     if (!input.fullName || input.fullName.trim().length < 2) {
       throw new Error('Full name is required and must be at least 2 characters.');
     }
@@ -598,11 +629,19 @@ export class AdminService {
       email = `patron.${digits || Date.now()}@library.local`;
     }
 
+    const feesStatus = input.feesStatus === 'paid' ? 'paid' : 'unpaid';
+    const now = new Date();
+    const feesPaidAt = feesStatus === 'paid' ? now : null;
+    const feesExpiresAt = feesStatus === 'paid' ? new Date(now.getTime() + 365 * 24 * 60 * 60 * 1000) : null;
+
     const user = new User({
       fullName: input.fullName.trim(),
       phoneNo: cleanedPhone,
       email,
       status: 'approved',
+      feesStatus,
+      feesPaidAt,
+      feesExpiresAt,
     });
 
     await user.save();
@@ -614,6 +653,7 @@ export class AdminService {
    */
   static async getUserDetails(userId: string) {
     if (!userId) throw new Error('User ID is required');
+    await AdminService.checkAndUpdateExpiredFees();
 
     const user = await User.findById(userId);
     if (!user) throw new Error('User not found');
@@ -644,7 +684,7 @@ export class AdminService {
    */
   static async updateUser(
     userId: string,
-    input: { fullName?: string; phoneNo?: string; email?: string; status?: string }
+    input: { fullName?: string; phoneNo?: string; email?: string; status?: string; feesStatus?: 'paid' | 'unpaid' }
   ) {
     if (!userId) throw new Error('User ID is required');
     const user = await User.findById(userId);
@@ -687,6 +727,21 @@ export class AdminService {
         throw new Error('Invalid status.');
       }
       user.status = input.status === 'blocked' ? 'rejected' : (input.status as any);
+    }
+
+    if (input.feesStatus !== undefined) {
+      if (!['paid', 'unpaid'].includes(input.feesStatus)) {
+        throw new Error('Invalid fees status. Allowed values: paid, unpaid');
+      }
+      user.feesStatus = input.feesStatus;
+      if (input.feesStatus === 'paid') {
+        const now = new Date();
+        user.feesPaidAt = now;
+        // 365 days validity from payment date
+        user.feesExpiresAt = new Date(now.getTime() + 365 * 24 * 60 * 60 * 1000);
+      } else {
+        user.feesExpiresAt = null;
+      }
     }
 
     await user.save();

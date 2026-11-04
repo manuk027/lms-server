@@ -7,6 +7,9 @@ export interface IUser extends Document {
   email?: string
   googleId?: string
   status: 'waiting' | 'approved' | 'rejected'
+  feesStatus: 'paid' | 'unpaid'
+  feesPaidAt?: Date | null
+  feesExpiresAt?: Date | null
   createdAt: Date
   updatedAt: Date
 }
@@ -46,6 +49,20 @@ const userSchema = new Schema<IUser>(
       enum: ['waiting', 'approved', 'rejected'],
       default: 'waiting',
       index: true,
+    },
+    feesStatus: {
+      type: String,
+      enum: ['paid', 'unpaid'],
+      default: 'unpaid',
+      index: true,
+    },
+    feesPaidAt: {
+      type: Date,
+      default: null,
+    },
+    feesExpiresAt: {
+      type: Date,
+      default: null,
     },
   },
   {

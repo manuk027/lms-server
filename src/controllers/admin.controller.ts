@@ -283,8 +283,8 @@ export class AdminController {
     res: Response
   ): Promise<void> {
     try {
-      const { fullName, phoneNo, email } = req.body || {}
-      const user = await AdminService.createUser({ fullName, phoneNo, email })
+      const { fullName, phoneNo, email, feesStatus } = req.body || {}
+      const user = await AdminService.createUser({ fullName, phoneNo, email, feesStatus })
       res.status(201).json({
         success: true,
         message: 'Patron created successfully',
@@ -333,8 +333,8 @@ export class AdminController {
   ): Promise<void> {
     try {
       const userId = String(req.params.id || '')
-      const { fullName, phoneNo, email, status } = req.body || {}
-      const user = await AdminService.updateUser(userId, { fullName, phoneNo, email, status })
+      const { fullName, phoneNo, email, status, feesStatus } = req.body || {}
+      const user = await AdminService.updateUser(userId, { fullName, phoneNo, email, status, feesStatus })
       res.status(200).json({
         success: true,
         message: 'Patron updated successfully',
