@@ -13,6 +13,7 @@ async function start() {
   if (mongoUri) {
     await connectDatabase(mongoUri)
     await AdminService.ensureDefaultAdmin()
+    await AdminService.syncAuthorsAndPublishers()
   } else {
     console.warn('MONGODB_URI is not set; starting without a database connection.')
   }

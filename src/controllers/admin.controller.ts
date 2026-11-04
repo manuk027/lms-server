@@ -275,6 +275,81 @@ export class AdminController {
   }
 
   /**
+   * Admin create user
+   * POST /api/admin/users
+   */
+  static async createUser(
+    req: AuthenticatedAdminRequest,
+    res: Response
+  ): Promise<void> {
+    try {
+      const { fullName, phoneNo, email } = req.body || {}
+      const user = await AdminService.createUser({ fullName, phoneNo, email })
+      res.status(201).json({
+        success: true,
+        message: 'Patron created successfully',
+        user,
+      })
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Failed to create user'
+      res.status(400).json({
+        success: false,
+        error: message,
+      })
+    }
+  }
+
+  /**
+   * Get user details and currently holding books
+   * GET /api/admin/users/:id/details
+   */
+  static async getUserDetails(
+    req: AuthenticatedAdminRequest,
+    res: Response
+  ): Promise<void> {
+    try {
+      const userId = String(req.params.id || '')
+      const data = await AdminService.getUserDetails(userId)
+      res.status(200).json({
+        success: true,
+        ...data,
+      })
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Failed to retrieve user details'
+      res.status(500).json({
+        success: false,
+        error: message,
+      })
+    }
+  }
+
+  /**
+   * Update user details
+   * PUT /api/admin/users/:id
+   */
+  static async updateUser(
+    req: AuthenticatedAdminRequest,
+    res: Response
+  ): Promise<void> {
+    try {
+      const userId = String(req.params.id || '')
+      const { fullName, phoneNo, email, status } = req.body || {}
+      const user = await AdminService.updateUser(userId, { fullName, phoneNo, email, status })
+      res.status(200).json({
+        success: true,
+        message: 'Patron updated successfully',
+        user,
+      })
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Failed to update user'
+      res.status(400).json({
+        success: false,
+        error: message,
+      })
+    }
+  }
+
+  /**
    * Get all publications
    * GET /api/admin/publications
    */
@@ -313,6 +388,30 @@ export class AdminController {
       })
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : 'Failed to retrieve authors'
+      res.status(500).json({
+        success: false,
+        error: message,
+      })
+    }
+  }
+
+  /**
+   * Sync authors and publishers with book catalog (removes orphaned ones)
+   * POST /api/admin/sync-metadata
+   */
+  static async syncAuthorsAndPublishers(
+    _req: AuthenticatedAdminRequest,
+    res: Response
+  ): Promise<void> {
+    try {
+      const result = await AdminService.syncAuthorsAndPublishers()
+      res.status(200).json({
+        success: true,
+        message: 'Authors and publishers synced with book catalog successfully',
+        ...result,
+      })
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Failed to sync metadata'
       res.status(500).json({
         success: false,
         error: message,

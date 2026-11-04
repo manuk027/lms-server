@@ -4,7 +4,7 @@ import { UserValidators } from '../validators'
 export interface IUser extends Document {
   fullName: string
   phoneNo?: string
-  email: string
+  email?: string
   googleId?: string
   status: 'waiting' | 'approved' | 'rejected'
   createdAt: Date
@@ -28,8 +28,9 @@ const userSchema = new Schema<IUser>(
     },
     email: {
       type: String,
-      required: [true, 'Email is required'],
+      required: false,
       unique: true,
+      sparse: true,
       lowercase: true,
       trim: true,
       validate: UserValidators.emailValidator,

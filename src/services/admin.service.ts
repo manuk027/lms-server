@@ -297,6 +297,10 @@ export class AdminService {
     if (!book) {
       throw new Error("Book is not found");
     }
+
+    const previousPublisherId = book.publisher;
+    const previousAuthorIds = Array.isArray(book.authors) ? [...book.authors] : [];
+
    // 1 - book name
     const rawName = input.name || input.bookName;
     if (rawName !== undefined) {
@@ -376,6 +380,30 @@ export class AdminService {
     if (input.isbn !== undefined) book.isbn = input.isbn.trim();
     if (input.notes !== undefined) book.notes = input.notes.trim();
     await book.save();
+
+    // Clean up old publisher if changed and no other book references it
+    if (input.publication !== undefined && previousPublisherId && String(previousPublisherId) !== String(book.publisher)) {
+      const remainingPubBooks = await Book.countDocuments({ publisher: previousPublisherId });
+      if (remainingPubBooks === 0) {
+        await Publisher.findByIdAndDelete(previousPublisherId);
+      }
+    }
+
+    // Clean up old authors if changed and no other book references them
+    if (input.authorName !== undefined && previousAuthorIds.length > 0) {
+      for (const oldAuthorId of previousAuthorIds) {
+        if (oldAuthorId && !book.authors.some((aId: any) => String(aId) === String(oldAuthorId))) {
+          const remainingAuthorBooks = await Book.countDocuments({ authors: oldAuthorId });
+          if (remainingAuthorBooks === 0) {
+            await Author.findByIdAndDelete(oldAuthorId);
+          }
+        }
+      }
+    }
+
+    // Keep authors and publishers in sync with books
+    await AdminService.syncAuthorsAndPublishers();
+
     // Populate references before returning
     await book.populate("publisher", "name");
     await book.populate("authors", "name category");
@@ -543,16 +571,178 @@ export class AdminService {
   }
 
   /**
-   * Get all publishers / publications
+   * Admin create a new library patron with name and phone number
+   */
+  static async createUser(input: { fullName: string; phoneNo: string; email?: string }) {
+    if (!input.fullName || input.fullName.trim().length < 2) {
+      throw new Error('Full name is required and must be at least 2 characters.');
+    }
+    if (!input.phoneNo || !input.phoneNo.trim()) {
+      throw new Error('Phone number is required.');
+    }
+
+    const cleanedPhone = input.phoneNo.trim();
+    const existingByPhone = await User.findOne({ phoneNo: cleanedPhone });
+    if (existingByPhone) {
+      throw new Error(`A patron with phone number "${cleanedPhone}" already exists.`);
+    }
+
+    let email = input.email && input.email.trim() ? input.email.trim().toLowerCase() : undefined;
+    if (email) {
+      const existingByEmail = await User.findOne({ email });
+      if (existingByEmail) {
+        throw new Error(`A patron with email "${email}" already exists.`);
+      }
+    } else {
+      const digits = cleanedPhone.replace(/\D/g, '');
+      email = `patron.${digits || Date.now()}@library.local`;
+    }
+
+    const user = new User({
+      fullName: input.fullName.trim(),
+      phoneNo: cleanedPhone,
+      email,
+      status: 'approved',
+    });
+
+    await user.save();
+    return user;
+  }
+
+  /**
+   * Get user details and currently holding borrowed books
+   */
+  static async getUserDetails(userId: string) {
+    if (!userId) throw new Error('User ID is required');
+
+    const user = await User.findById(userId);
+    if (!user) throw new Error('User not found');
+
+    // Find books currently holding (active loans: borrowed, overdue, return_pending)
+    const activeLoans = await History.find({
+      user: userId,
+      status: { $in: ['borrowed', 'overdue', 'return_pending'] },
+    })
+      .populate({
+        path: 'book',
+        select: 'bookName bookCode shelf category imageUrl noOfPages isbn available noOfCopies',
+        populate: [
+          { path: 'publisher', select: 'name' },
+          { path: 'authors', select: 'name' },
+        ],
+      })
+      .sort({ borrowedAt: -1 });
+
+    return {
+      user,
+      activeLoans,
+    };
+  }
+
+  /**
+   * Update patron details (name, phone, email, status)
+   */
+  static async updateUser(
+    userId: string,
+    input: { fullName?: string; phoneNo?: string; email?: string; status?: string }
+  ) {
+    if (!userId) throw new Error('User ID is required');
+    const user = await User.findById(userId);
+    if (!user) throw new Error('User not found');
+
+    if (input.fullName !== undefined) {
+      if (!input.fullName.trim() || input.fullName.trim().length < 2) {
+        throw new Error('Full name must be at least 2 characters long.');
+      }
+      user.fullName = input.fullName.trim();
+    }
+
+    if (input.phoneNo !== undefined) {
+      const cleanedPhone = input.phoneNo.trim();
+      if (cleanedPhone) {
+        const existingByPhone = await User.findOne({ phoneNo: cleanedPhone, _id: { $ne: userId } });
+        if (existingByPhone) {
+          throw new Error(`Phone number "${cleanedPhone}" is already assigned to another user.`);
+        }
+        user.phoneNo = cleanedPhone;
+      } else {
+        user.phoneNo = undefined;
+      }
+    }
+
+    if (input.email !== undefined) {
+      const cleanedEmail = input.email.trim().toLowerCase();
+      if (cleanedEmail) {
+        const existingByEmail = await User.findOne({ email: cleanedEmail, _id: { $ne: userId } });
+        if (existingByEmail) {
+          throw new Error(`Email "${cleanedEmail}" is already assigned to another user.`);
+        }
+        user.email = cleanedEmail;
+      }
+    }
+
+    if (input.status !== undefined) {
+      const validStatuses = ['waiting', 'approved', 'rejected', 'blocked'];
+      if (!validStatuses.includes(input.status)) {
+        throw new Error('Invalid status.');
+      }
+      user.status = input.status === 'blocked' ? 'rejected' : (input.status as any);
+    }
+
+    await user.save();
+    return user;
+  }
+
+  /**
+   * Clear orphaned authors and publishers from the database.
+   * Authors and publishers exist ONLY when at least one book (available or unavailable) references them.
+   */
+  static async syncAuthorsAndPublishers(): Promise<{ deletedAuthors: number; deletedPublishers: number }> {
+    // 1. Get all distinct author IDs referenced by existing books (including unavailable books)
+    const rawAuthorIds = await Book.distinct('authors');
+    const referencedAuthorIds = rawAuthorIds.filter((id) => id != null);
+
+    let authorDeleteResult;
+    if (referencedAuthorIds.length === 0) {
+      authorDeleteResult = await Author.deleteMany({});
+    } else {
+      authorDeleteResult = await Author.deleteMany({
+        _id: { $nin: referencedAuthorIds },
+      });
+    }
+
+    // 2. Get all distinct publisher IDs referenced by existing books (including unavailable books)
+    const rawPublisherIds = await Book.distinct('publisher');
+    const referencedPublisherIds = rawPublisherIds.filter((id) => id != null);
+
+    let publisherDeleteResult;
+    if (referencedPublisherIds.length === 0) {
+      publisherDeleteResult = await Publisher.deleteMany({});
+    } else {
+      publisherDeleteResult = await Publisher.deleteMany({
+        _id: { $nin: referencedPublisherIds },
+      });
+    }
+
+    return {
+      deletedAuthors: authorDeleteResult.deletedCount || 0,
+      deletedPublishers: publisherDeleteResult.deletedCount || 0,
+    };
+  }
+
+  /**
+   * Get all publishers / publications that currently have books in the library catalog
    */
   static async getPublications() {
+    await AdminService.syncAuthorsAndPublishers();
     return Publisher.find().sort({ createdAt: -1 });
   }
 
   /**
-   * Get all registered book authors
+   * Get all registered book authors that currently have books in the library catalog
    */
   static async getAuthors() {
+    await AdminService.syncAuthorsAndPublishers();
     return Author.find().sort({ createdAt: -1 });
   }
 
@@ -569,7 +759,33 @@ export class AdminService {
     if (activeLoan) {
       throw new Error("This book can't be deleted because this book is borrowed by a user");
     }
+
+    const previousPublisherId = book.publisher;
+    const previousAuthorIds = Array.isArray(book.authors) ? [...book.authors] : [];
+
     await Book.findByIdAndDelete(bookId);
+
+    // Delete publisher if no other books in the catalog use it
+    if (previousPublisherId) {
+      const remainingBooksWithPublisher = await Book.countDocuments({ publisher: previousPublisherId });
+      if (remainingBooksWithPublisher === 0) {
+        await Publisher.findByIdAndDelete(previousPublisherId);
+      }
+    }
+
+    // Delete author(s) if no other books in the catalog use them
+    for (const authorId of previousAuthorIds) {
+      if (authorId) {
+        const remainingBooksWithAuthor = await Book.countDocuments({ authors: authorId });
+        if (remainingBooksWithAuthor === 0) {
+          await Author.findByIdAndDelete(authorId);
+        }
+      }
+    }
+
+    // Final sync to clean up any edge case orphans
+    await AdminService.syncAuthorsAndPublishers();
+
     return { success: true, message: "Book successfully deleted" };
   }
 
@@ -691,9 +907,10 @@ export class AdminService {
   /**
    * Update user status (approve, reject, or set waiting)
    */
-  static async updateUserStatus(userId: string, status: 'waiting' | 'approved' | 'rejected') {
-    if (!['waiting', 'approved', 'rejected'].includes(status)) {
-      throw new Error('Invalid status. Allowed values: waiting, approved, rejected');
+  static async updateUserStatus(userId: string, status: 'waiting' | 'approved' | 'rejected' | 'blocked') {
+    const normalizedStatus = status === 'blocked' ? 'rejected' : status;
+    if (!['waiting', 'approved', 'rejected'].includes(normalizedStatus)) {
+      throw new Error('Invalid status. Allowed values: waiting, approved, rejected, blocked');
     }
 
     const user = await User.findById(userId);
@@ -701,11 +918,11 @@ export class AdminService {
       throw new Error('User not found');
     }
 
-    user.status = status;
+    user.status = normalizedStatus;
     await user.save();
 
     // If approved, mark any waiting notification for this user as read
-    if (status === 'approved') {
+    if (normalizedStatus === 'approved') {
       await Notification.updateMany({ userId: user._id, read: false }, { read: true });
     }
 

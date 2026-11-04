@@ -87,7 +87,7 @@ export class AuthService {
       user: {
         id: user._id.toString(),
         fullName: user.fullName,
-        email: user.email,
+        email: user.email || '',
         phoneNo: user.phoneNo,
         googleId: user.googleId,
         avatar: firebaseUser.picture,
@@ -119,7 +119,7 @@ export class AuthService {
       user: {
         id: user._id.toString(),
         fullName: user.fullName,
-        email: user.email,
+        email: user.email || '',
         phoneNo: user.phoneNo,
         googleId: user.googleId,
         status: user.status || 'waiting',
