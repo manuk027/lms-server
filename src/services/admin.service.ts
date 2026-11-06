@@ -219,7 +219,6 @@ export class AdminService {
     if (!author) {
       author = await Author.create({
         name: rawAuthor.trim(),
-        category: rawCategory.trim(),
         gender: "Not specified",
       });
     }
@@ -366,12 +365,10 @@ export class AdminService {
     if (input.authorName !== undefined) {
       const rawAuthor = input.authorName.trim();
       if (!rawAuthor) throw new Error("Author name cannot be empty.");
-      const rawCategory = input.category || book.category || "General";
       let author = await Author.findOne({ name: rawAuthor });
       if (!author) {
         author = await Author.create({
           name: rawAuthor,
-          category: rawCategory.trim(),
           gender: "Not specified",
         });
       }
