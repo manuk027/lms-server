@@ -4,7 +4,7 @@ import { AuthorValidators } from '../validators'
 export interface IAuthor extends Document {
   name: string
   age?: number
-  category: string
+  category?: string
   gender?: string
   createdAt: Date
   updatedAt: Date
@@ -25,9 +25,8 @@ const authorSchema = new Schema<IAuthor>(
     },
     category: {
       type: String,
-      required: [true, 'Category is required'],
       trim: true,
-      index: true,
+      default: '',
     },
     gender: {
       type: String,
