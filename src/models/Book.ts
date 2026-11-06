@@ -3,19 +3,26 @@ import { BookValidators } from '../validators'
 
 export interface IBook extends Document {
   bookName: string
+  title?: string
   publisher: Types.ObjectId
   authors: Types.ObjectId[]
   shelf: string
   category: string
   bookCode: string
   noOfPages: number
-  available: boolean,
-  noOfCopies : number,
+  available: boolean
+  noOfCopies: number
   language: string
   imageUrl?: string
   imageCaption?: string
   isbn?: string
   notes?: string
+  description?: string
+  subjects?: string[]
+  format?: string
+  assignmentSource?: 'librarian' | 'recommendation'
+  verified?: boolean
+  metadataSource?: 'google-books' | 'manual' | 'gemini' | 'openlibrary'
   averageRating?: number
   ratingsCount?: number
   createdAt: Date
@@ -112,6 +119,36 @@ const bookSchema = new Schema<IBook>(
       trim: true,
       default: '',
     },
+    description: {
+      type: String,
+      trim: true,
+      default: '',
+    },
+    subjects: {
+      type: [String],
+      default: [],
+      index: true,
+    },
+    format: {
+      type: String,
+      trim: true,
+      default: 'Hardcover',
+    },
+    assignmentSource: {
+      type: String,
+      enum: ['librarian', 'recommendation'],
+      default: 'librarian',
+    },
+    verified: {
+      type: Boolean,
+      default: true,
+      index: true,
+    },
+    metadataSource: {
+      type: String,
+      enum: ['google-books', 'manual', 'gemini', 'openlibrary'],
+      default: 'manual',
+    },
     averageRating: {
       type: Number,
       default: 0,
@@ -130,6 +167,10 @@ const bookSchema = new Schema<IBook>(
     toObject: { virtuals: true },
   }
 )
+
+bookSchema.virtual('title').get(function (this: IBook) {
+  return this.bookName
+})
 
 export const Book: Model<IBook> = model<IBook>('Book', bookSchema)
 

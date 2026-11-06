@@ -17,9 +17,17 @@ adminRouter.get('/dashboard/stats', requireAdminAuth, AdminController.getDashboa
 adminRouter.post('/books', requireAdminAuth, AdminController.createBook)
 adminRouter.get('/books', requireAdminAuth, AdminController.getBooks)
 adminRouter.get('/books/isbn/:isbn', requireAdminAuth, AdminController.getBookByIsbn)
+adminRouter.post('/books/lookup-isbn', requireAdminAuth, AdminController.lookupIsbn)
 adminRouter.post('/books/:id/borrow', requireAdminAuth, AdminController.borrowBook)
 adminRouter.get('/books/:id/borrowers', requireAdminAuth, AdminController.getBookBorrowers)
 adminRouter.post('/books/:id/return', requireAdminAuth, AdminController.returnBook)
+
+// AI-Assisted Shelf Recommendations & Shelf Management endpoints
+adminRouter.post('/recommendations/recommend', requireAdminAuth, AdminController.recommendShelf)
+adminRouter.post('/recommendations/feedback', requireAdminAuth, AdminController.recordFeedback)
+adminRouter.get('/recommendations/history', requireAdminAuth, AdminController.getRecommendationHistory)
+adminRouter.get('/shelves', requireAdminAuth, AdminController.getShelves)
+adminRouter.post('/shelves', requireAdminAuth, AdminController.createShelf)
 
 // Management endpoints
 adminRouter.post('/users', requireAdminAuth, AdminController.createUser)

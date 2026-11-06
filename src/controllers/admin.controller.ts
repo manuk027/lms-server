@@ -1,6 +1,9 @@
 import { Request, Response } from 'express'
 import { AuthenticatedAdminRequest } from '../middlewares/adminAuth.middleware'
 import { AdminService } from '../services/admin.service'
+import { RecommendationService } from '../services/recommendation.service'
+import { ShelfService } from '../services/shelf.service'
+import { IsbnService } from '../services/isbn.service'
 
 const ADMIN_SESSION_COOKIE = 'adminSessionToken'
 
@@ -105,13 +108,6 @@ export class AdminController {
   ): Promise<void> {
     try {
       const book = await AdminService.createBook(req.body)
-       console.log('✅ [MongoDB] Saved book document:', {
-        id: book._id,
-        title: book.bookName,
-        imageUrl: book.imageUrl,
-        shelf: book.shelf,
-        bookCode: book.bookCode
-      })
       res.status(201).json({
         success: true,
         message: 'Book successfully stored in library database',
@@ -817,6 +813,164 @@ export class AdminController {
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : 'Failed to update return request'
       res.status(400).json({
+        success: false,
+        error: message,
+      })
+    }
+  }
+
+  /**
+   * Recommend optimal shelves for a book
+   * POST /api/admin/recommendations/recommend
+   */
+  static async recommendShelf(
+    req: AuthenticatedAdminRequest,
+    res: Response
+  ): Promise<void> {
+    try {
+      const result = await RecommendationService.recommendShelf(
+        req.body,
+        req.body.excludeBookId
+      )
+      res.status(200).json({
+        success: true,
+        ...result,
+      })
+    } catch (error: unknown) {
+      const message =
+        error instanceof Error ? error.message : 'Failed to calculate shelf recommendation'
+      res.status(500).json({
+        success: false,
+        error: message,
+      })
+    }
+  }
+
+  /**
+   * Record librarian recommendation feedback
+   * POST /api/admin/recommendations/feedback
+   */
+  static async recordFeedback(
+    req: AuthenticatedAdminRequest,
+    res: Response
+  ): Promise<void> {
+    try {
+      await RecommendationService.recordFeedback(req.body)
+      res.status(200).json({
+        success: true,
+        message: 'Feedback recorded successfully',
+      })
+    } catch (error: unknown) {
+      const message =
+        error instanceof Error ? error.message : 'Failed to record feedback'
+      res.status(400).json({
+        success: false,
+        error: message,
+      })
+    }
+  }
+
+  /**
+   * Get recommendation history
+   * GET /api/admin/recommendations/history
+   */
+  static async getRecommendationHistory(
+    req: AuthenticatedAdminRequest,
+    res: Response
+  ): Promise<void> {
+    try {
+      const limit = Number(req.query.limit) || 50
+      const history = await RecommendationService.getHistory(limit)
+      res.status(200).json({
+        success: true,
+        history,
+      })
+    } catch (error: unknown) {
+      const message =
+        error instanceof Error ? error.message : 'Failed to fetch recommendation history'
+      res.status(500).json({
+        success: false,
+        error: message,
+      })
+    }
+  }
+
+  /**
+   * Get all shelves with live occupancy and capacity
+   * GET /api/admin/shelves
+   */
+  static async getShelves(
+    _req: AuthenticatedAdminRequest,
+    res: Response
+  ): Promise<void> {
+    try {
+      await ShelfService.syncShelves()
+      const shelves = await ShelfService.getAllShelves(false)
+      res.status(200).json({
+        success: true,
+        shelves,
+      })
+    } catch (error: unknown) {
+      const message =
+        error instanceof Error ? error.message : 'Failed to retrieve shelves'
+      res.status(500).json({
+        success: false,
+        error: message,
+      })
+    }
+  }
+
+  /**
+   * Create or define a shelf
+   * POST /api/admin/shelves
+   */
+  static async createShelf(
+    req: AuthenticatedAdminRequest,
+    res: Response
+  ): Promise<void> {
+    try {
+      const shelf = await ShelfService.createShelf(req.body)
+      res.status(201).json({
+        success: true,
+        message: 'Shelf created successfully',
+        shelf,
+      })
+    } catch (error: unknown) {
+      const message =
+        error instanceof Error ? error.message : 'Failed to create shelf'
+      res.status(400).json({
+        success: false,
+        error: message,
+      })
+    }
+  }
+
+  /**
+   * Server-side ISBN lookup with Google Books & OpenLibrary
+   * POST /api/admin/books/lookup-isbn
+   */
+  static async lookupIsbn(
+    req: AuthenticatedAdminRequest,
+    res: Response
+  ): Promise<void> {
+    try {
+      const rawIsbn = String(req.body.isbn || req.query.isbn || '')
+      if (!rawIsbn.trim()) {
+        res.status(400).json({
+          success: false,
+          error: 'ISBN is required',
+        })
+        return
+      }
+      const metadata = await IsbnService.lookupIsbn(rawIsbn)
+      res.status(200).json({
+        success: true,
+        metadata,
+      })
+    } catch (error: unknown) {
+      const message =
+        error instanceof Error ? error.message : 'Failed to lookup ISBN'
+      res.status(404).json({
         success: false,
         error: message,
       })

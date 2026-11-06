@@ -11,6 +11,9 @@ import { Review } from '../models/Review'
 import { User } from '../models/User'
 import { AdminValidators } from '../validators/admin.validator'
 import { BookValidators } from '../validators'
+import { ShelfService } from './shelf.service'
+import { RecommendationService } from './recommendation.service'
+import { MetadataNormalizer } from './metadata.normalizer'
 
 const BORROW_DAYS = parseInt(process.env.BORROW_DURATION_DAYS || '7', 10)
 const EXTENSION_DAYS = parseInt(process.env.EXTENSION_DURATION_DAYS || '7', 10)
@@ -168,6 +171,15 @@ export class AdminService {
     bookCode?: string;
     notes?: string;
     isbn?: string;
+    subjects?: string[] | string;
+    format?: string;
+    description?: string;
+    verified?: boolean;
+    assignmentSource?: 'librarian' | 'recommendation';
+    metadataSource?: 'google-books' | 'openlibrary' | 'manual' | 'gemini';
+    historyId?: string;
+    acceptedRecommendation?: boolean;
+    feedbackReason?: string;
   }) {
     const rawName = input.name || input.bookName;
     if (!rawName || !rawName.trim()) {
@@ -241,25 +253,48 @@ export class AdminService {
       throw new Error('Number of copies must be at least 1.')
     }
 
-   
+    const normCategory = MetadataNormalizer.normalizeGenre(rawCategory);
+    const normLanguage = MetadataNormalizer.normalizeLanguage(input.language || 'English');
+    const normFormat = MetadataNormalizer.normalizeFormat(input.format || 'Hardcover');
+    const normSubjects = MetadataNormalizer.normalizeSubjects(input.subjects);
+
     const book = new Book({
       bookName: rawName.trim(),
       publisher: publisher._id,
       authors: [author._id],
       shelf: rawShelf.trim(),
-      category: rawCategory.trim(),
+      category: normCategory,
       bookCode: finalBookCode,
       noOfPages: parsedPages,
       noOfCopies: parsedCopies,
       available: isAvail,
-      language: (input.language || "English").trim(),
+      language: normLanguage,
+      subjects: normSubjects,
+      format: normFormat,
+      description: (input.description || input.notes || '').trim(),
       imageUrl: (input.imageUrl || "").trim(),
       imageCaption: (input.imageCaption || "").trim(),
       isbn: (input.isbn || "").trim(),
       notes: (input.notes || "").trim(),
+      verified: input.verified !== undefined ? Boolean(input.verified) : true,
+      assignmentSource: input.assignmentSource || 'librarian',
+      metadataSource: input.metadataSource || 'manual',
     });
 
     await book.save();
+
+    // Dynamically adjust shelf physical occupancy
+    await ShelfService.adjustOccupancy(book.shelf, 1);
+
+    // Record feedback if recommendation was displayed
+    if (input.historyId) {
+      await RecommendationService.recordFeedback({
+        historyId: input.historyId,
+        selectedShelf: book.shelf,
+        acceptedRecommendation: input.acceptedRecommendation !== undefined ? Boolean(input.acceptedRecommendation) : true,
+        feedback: input.feedbackReason || '',
+      });
+    }
 
     // Populate references before returning
     await book.populate("publisher", "name");
@@ -294,6 +329,12 @@ export class AdminService {
       bookCode?: string;
       notes?: string;
       isbn?: string;
+      subjects?: string[] | string;
+      format?: string;
+      description?: string;
+      verified?: boolean;
+      assignmentSource?: 'librarian' | 'recommendation';
+      metadataSource?: 'google-books' | 'openlibrary' | 'manual' | 'gemini';
     },
   ) {
     const book = await Book.findById(bookId);
@@ -303,6 +344,7 @@ export class AdminService {
 
     const previousPublisherId = book.publisher;
     const previousAuthorIds = Array.isArray(book.authors) ? [...book.authors] : [];
+    const previousShelf = book.shelf;
 
    // 1 - book name
     const rawName = input.name || input.bookName;
@@ -377,12 +419,25 @@ export class AdminService {
       book.available = Boolean(input.available);
     }
     // 9. Optional metadata
-    if (input.language !== undefined) book.language = input.language.trim() || "English";
+    if (input.language !== undefined) book.language = MetadataNormalizer.normalizeLanguage(input.language.trim());
     if (input.imageUrl !== undefined) book.imageUrl = input.imageUrl.trim();
     if (input.imageCaption !== undefined) book.imageCaption = input.imageCaption.trim();
     if (input.isbn !== undefined) book.isbn = input.isbn.trim();
     if (input.notes !== undefined) book.notes = input.notes.trim();
+    if (input.subjects !== undefined) book.subjects = MetadataNormalizer.normalizeSubjects(input.subjects);
+    if (input.format !== undefined) book.format = MetadataNormalizer.normalizeFormat(input.format);
+    if (input.description !== undefined) book.description = input.description.trim();
+    if (input.verified !== undefined) book.verified = Boolean(input.verified);
+    if (input.assignmentSource !== undefined) book.assignmentSource = input.assignmentSource;
+    if (input.metadataSource !== undefined) book.metadataSource = input.metadataSource;
+
     await book.save();
+
+    // Adjust shelf occupancy if shelf was changed
+    if (input.shelf !== undefined && previousShelf && previousShelf.toUpperCase() !== book.shelf.toUpperCase()) {
+      await ShelfService.adjustOccupancy(previousShelf, -1);
+      await ShelfService.adjustOccupancy(book.shelf, 1);
+    }
 
     // Clean up old publisher if changed and no other book references it
     if (input.publication !== undefined && previousPublisherId && String(previousPublisherId) !== String(book.publisher)) {
@@ -820,8 +875,14 @@ export class AdminService {
 
     const previousPublisherId = book.publisher;
     const previousAuthorIds = Array.isArray(book.authors) ? [...book.authors] : [];
+    const previousShelf = book.shelf;
 
     await Book.findByIdAndDelete(bookId);
+
+    // Adjust shelf occupancy when book is deleted
+    if (previousShelf) {
+      await ShelfService.adjustOccupancy(previousShelf, -1);
+    }
 
     // Delete publisher if no other books in the catalog use it
     if (previousPublisherId) {
