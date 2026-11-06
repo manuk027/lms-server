@@ -11,6 +11,9 @@ import { Review } from '../models/Review'
 import { User } from '../models/User'
 import { AdminValidators } from '../validators/admin.validator'
 import { BookValidators } from '../validators'
+import { ShelfService } from './shelf.service'
+import { RecommendationService } from './recommendation.service'
+import { MetadataNormalizer } from './metadata.normalizer'
 
 const BORROW_DAYS = parseInt(process.env.BORROW_DURATION_DAYS || '7', 10)
 const EXTENSION_DAYS = parseInt(process.env.EXTENSION_DURATION_DAYS || '7', 10)
@@ -123,10 +126,12 @@ export class AdminService {
    * Get sample dashboard metrics and circulation stats
    */
   static async getDashboardStats() {
-    const [totalBooks, availableBooks, totalUsers, activeLoans, overdueLoans, recentActivity] = await Promise.all([
+    await AdminService.checkAndUpdateExpiredFees();
+    const [totalBooks, availableBooks, totalUsers, unpaidUsers, activeLoans, overdueLoans, recentActivity] = await Promise.all([
       Book.countDocuments(),
       Book.countDocuments({ available: true }),
       User.countDocuments(),
+      User.countDocuments({ feesStatus: { $ne: 'paid' } }),
       History.countDocuments({ status: "borrowed" }),
       History.countDocuments({ status: "overdue" }),
       History.find().sort({ borrowedAt: -1 }).limit(6).populate("user", "fullName email").populate("book", "bookName bookCode shelf"),
@@ -138,6 +143,7 @@ export class AdminService {
         availableBooks,
         borrowedBooks: totalBooks - availableBooks,
         totalUsers,
+        unpaidUsers,
         activeLoans,
         overdueLoans,
       },
@@ -165,6 +171,15 @@ export class AdminService {
     bookCode?: string;
     notes?: string;
     isbn?: string;
+    subjects?: string[] | string;
+    format?: string;
+    description?: string;
+    verified?: boolean;
+    assignmentSource?: 'librarian' | 'recommendation';
+    metadataSource?: 'google-books' | 'openlibrary' | 'manual' | 'gemini';
+    historyId?: string;
+    acceptedRecommendation?: boolean;
+    feedbackReason?: string;
   }) {
     const rawName = input.name || input.bookName;
     if (!rawName || !rawName.trim()) {
@@ -238,25 +253,48 @@ export class AdminService {
       throw new Error('Number of copies must be at least 1.')
     }
 
-   
+    const normCategory = MetadataNormalizer.normalizeGenre(rawCategory);
+    const normLanguage = MetadataNormalizer.normalizeLanguage(input.language || 'English');
+    const normFormat = MetadataNormalizer.normalizeFormat(input.format || 'Hardcover');
+    const normSubjects = MetadataNormalizer.normalizeSubjects(input.subjects);
+
     const book = new Book({
       bookName: rawName.trim(),
       publisher: publisher._id,
       authors: [author._id],
       shelf: rawShelf.trim(),
-      category: rawCategory.trim(),
+      category: normCategory,
       bookCode: finalBookCode,
       noOfPages: parsedPages,
       noOfCopies: parsedCopies,
       available: isAvail,
-      language: (input.language || "English").trim(),
+      language: normLanguage,
+      subjects: normSubjects,
+      format: normFormat,
+      description: (input.description || input.notes || '').trim(),
       imageUrl: (input.imageUrl || "").trim(),
       imageCaption: (input.imageCaption || "").trim(),
       isbn: (input.isbn || "").trim(),
       notes: (input.notes || "").trim(),
+      verified: input.verified !== undefined ? Boolean(input.verified) : true,
+      assignmentSource: input.assignmentSource || 'librarian',
+      metadataSource: input.metadataSource || 'manual',
     });
 
     await book.save();
+
+    // Dynamically adjust shelf physical occupancy
+    await ShelfService.adjustOccupancy(book.shelf, 1);
+
+    // Record feedback if recommendation was displayed
+    if (input.historyId) {
+      await RecommendationService.recordFeedback({
+        historyId: input.historyId,
+        selectedShelf: book.shelf,
+        acceptedRecommendation: input.acceptedRecommendation !== undefined ? Boolean(input.acceptedRecommendation) : true,
+        feedback: input.feedbackReason || '',
+      });
+    }
 
     // Populate references before returning
     await book.populate("publisher", "name");
@@ -291,12 +329,23 @@ export class AdminService {
       bookCode?: string;
       notes?: string;
       isbn?: string;
+      subjects?: string[] | string;
+      format?: string;
+      description?: string;
+      verified?: boolean;
+      assignmentSource?: 'librarian' | 'recommendation';
+      metadataSource?: 'google-books' | 'openlibrary' | 'manual' | 'gemini';
     },
   ) {
     const book = await Book.findById(bookId);
     if (!book) {
       throw new Error("Book is not found");
     }
+
+    const previousPublisherId = book.publisher;
+    const previousAuthorIds = Array.isArray(book.authors) ? [...book.authors] : [];
+    const previousShelf = book.shelf;
+
    // 1 - book name
     const rawName = input.name || input.bookName;
     if (rawName !== undefined) {
@@ -345,6 +394,14 @@ export class AdminService {
       }
       book.noOfPages = parsedPages;
     }
+    // 6b. Number of Copies
+    if (input.noOfCopies !== undefined) {
+      const parsedCopies = typeof input.noOfCopies === "number" ? input.noOfCopies : parseInt(String(input.noOfCopies || "1"), 10);
+      if (isNaN(parsedCopies) || parsedCopies < 1) {
+        throw new Error("Number of copies must be at least 1.");
+      }
+      book.noOfCopies = parsedCopies;
+    }
     // 7. Book Code 
     if (input.bookCode !== undefined) {
       const newCode = input.bookCode.trim().toUpperCase();
@@ -362,12 +419,49 @@ export class AdminService {
       book.available = Boolean(input.available);
     }
     // 9. Optional metadata
-    if (input.language !== undefined) book.language = input.language.trim() || "English";
+    if (input.language !== undefined) book.language = MetadataNormalizer.normalizeLanguage(input.language.trim());
     if (input.imageUrl !== undefined) book.imageUrl = input.imageUrl.trim();
     if (input.imageCaption !== undefined) book.imageCaption = input.imageCaption.trim();
     if (input.isbn !== undefined) book.isbn = input.isbn.trim();
     if (input.notes !== undefined) book.notes = input.notes.trim();
+    if (input.subjects !== undefined) book.subjects = MetadataNormalizer.normalizeSubjects(input.subjects);
+    if (input.format !== undefined) book.format = MetadataNormalizer.normalizeFormat(input.format);
+    if (input.description !== undefined) book.description = input.description.trim();
+    if (input.verified !== undefined) book.verified = Boolean(input.verified);
+    if (input.assignmentSource !== undefined) book.assignmentSource = input.assignmentSource;
+    if (input.metadataSource !== undefined) book.metadataSource = input.metadataSource;
+
     await book.save();
+
+    // Adjust shelf occupancy if shelf was changed
+    if (input.shelf !== undefined && previousShelf && previousShelf.toUpperCase() !== book.shelf.toUpperCase()) {
+      await ShelfService.adjustOccupancy(previousShelf, -1);
+      await ShelfService.adjustOccupancy(book.shelf, 1);
+    }
+
+    // Clean up old publisher if changed and no other book references it
+    if (input.publication !== undefined && previousPublisherId && String(previousPublisherId) !== String(book.publisher)) {
+      const remainingPubBooks = await Book.countDocuments({ publisher: previousPublisherId });
+      if (remainingPubBooks === 0) {
+        await Publisher.findByIdAndDelete(previousPublisherId);
+      }
+    }
+
+    // Clean up old authors if changed and no other book references them
+    if (input.authorName !== undefined && previousAuthorIds.length > 0) {
+      for (const oldAuthorId of previousAuthorIds) {
+        if (oldAuthorId && !book.authors.some((aId: any) => String(aId) === String(oldAuthorId))) {
+          const remainingAuthorBooks = await Book.countDocuments({ authors: oldAuthorId });
+          if (remainingAuthorBooks === 0) {
+            await Author.findByIdAndDelete(oldAuthorId);
+          }
+        }
+      }
+    }
+
+    // Keep authors and publishers in sync with books
+    await AdminService.syncAuthorsAndPublishers();
+
     // Populate references before returning
     await book.populate("publisher", "name");
     await book.populate("authors", "name category");
@@ -375,23 +469,393 @@ export class AdminService {
   }
 
   /**
+   * Find a book in the library catalog by ISBN or accession code
+   */
+  static async getBookByIsbn(rawIsbn: string) {
+    const trimmed = (rawIsbn || '').trim();
+    if (!trimmed) return null;
+    const cleanDigits = trimmed.replace(/[^0-9xX]/g, '');
+
+    // 1. Direct query by exact isbn or bookCode
+    let book = await Book.findOne({
+      $or: [
+        { isbn: trimmed },
+        { bookCode: trimmed.toUpperCase() },
+      ],
+    })
+      .populate('publisher', 'name')
+      .populate('authors', 'name category');
+
+    // 2. If not found and has at least 8 digits, query with hyphen-tolerant regex
+    if (!book && cleanDigits.length >= 8) {
+      const regexPattern = cleanDigits.split('').join('[- ]?');
+      book = await Book.findOne({
+        isbn: { $regex: regexPattern, $options: 'i' },
+      })
+        .populate('publisher', 'name')
+        .populate('authors', 'name category');
+    }
+
+    return book;
+  }
+
+  /**
+   * Admin issue / borrow a book to a registered library patron
+   */
+  static async borrowBook(bookId: string, userId: string, dueDate?: string | Date) {
+    if (!bookId) throw new Error('Book ID is required');
+    if (!userId) throw new Error('User ID is required');
+
+    const book = await Book.findById(bookId);
+    if (!book) throw new Error('Book not found in library database');
+
+    const currentCopies = typeof book.noOfCopies === 'number' ? book.noOfCopies : (book.available ? 1 : 0);
+    if (currentCopies < 1) {
+      throw new Error(`Cannot borrow "${book.bookName}". No copies are currently available in inventory.`);
+    }
+
+    const user = await User.findById(userId);
+    if (!user) throw new Error('Selected patron / user not found');
+    if (user.status === 'rejected') {
+      throw new Error(`Cannot issue book to user "${user.fullName}" whose account status is rejected.`);
+    }
+
+    // Check if user already holds an active loan of this book
+    const existingLoan = await History.findOne({
+      user: userId,
+      book: bookId,
+      status: { $in: ['borrowed', 'overdue'] },
+    });
+    if (existingLoan) {
+      throw new Error(`Patron "${user.fullName}" is already holding an active copy of this book.`);
+    }
+
+    const now = new Date();
+    const defaultDueDate = new Date(now.getTime() + 14 * 24 * 60 * 60 * 1000); // 14 days standard
+
+    const loan = await History.create({
+      user: userId,
+      book: bookId,
+      borrowedAt: now,
+      dueDate: dueDate ? new Date(dueDate) : defaultDueDate,
+      status: 'borrowed',
+      extensionStatus: 'none',
+    });
+
+    // Decrement copies and mark unavailable when qty reaches 0
+    const updatedCopies = Math.max(0, currentCopies - 1);
+    book.noOfCopies = updatedCopies;
+    book.available = updatedCopies > 0;
+    await book.save();
+
+    await book.populate('publisher', 'name');
+    await book.populate('authors', 'name category');
+    await loan.populate('user', 'fullName email phoneNo');
+    await loan.populate('book', 'bookName bookCode shelf isbn');
+
+    return {
+      loan,
+      book,
+    };
+  }
+
+  /**
+   * Get active borrowers for a specific book
+   */
+  static async getBookBorrowers(bookId: string) {
+    if (!bookId) throw new Error('Book ID is required');
+
+    const loans = await History.find({
+      book: bookId,
+      status: { $in: ['borrowed', 'overdue', 'return_pending'] },
+    })
+      .populate('user', 'fullName email phoneNo avatar status')
+      .sort({ borrowedAt: -1 });
+
+    return loans;
+  }
+
+  /**
+   * Admin process return of a book from a patron
+   */
+  static async returnBook(bookId: string, loanId?: string, userId?: string) {
+    if (!bookId) throw new Error('Book ID is required');
+
+    let query: any = {
+      book: bookId,
+      status: { $in: ['borrowed', 'overdue', 'return_pending'] },
+    };
+
+    if (loanId) {
+      query._id = loanId;
+    } else if (userId) {
+      query.user = userId;
+    }
+
+    const loan = await History.findOne(query).populate('user', 'fullName email phoneNo');
+    if (!loan) {
+      throw new Error('No active borrow record found for this book and patron');
+    }
+
+    loan.status = 'returned';
+    loan.returnedAt = new Date();
+    await loan.save();
+
+    const book = await Book.findById(bookId);
+    if (!book) {
+      throw new Error('Book not found in library database');
+    }
+
+    // Increment available copies by 1 and ensure available is true
+    const currentCopies = typeof book.noOfCopies === 'number' ? book.noOfCopies : 0;
+    book.noOfCopies = currentCopies + 1;
+    book.available = true;
+    await book.save();
+
+    await book.populate('publisher', 'name');
+    await book.populate('authors', 'name category');
+
+    return {
+      loan,
+      book,
+    };
+  }
+
+  /**
+   * Helper to automatically update expired fees for users whose 365 days have elapsed.
+   * Also ensures all users without feesStatus explicitly default to 'unpaid'.
+   */
+  static async checkAndUpdateExpiredFees() {
+    const now = new Date();
+    // 1. Mark unpaid for users whose 365 days from payment have passed
+    await User.updateMany(
+      {
+        feesStatus: 'paid',
+        $or: [
+          { feesExpiresAt: { $ne: null, $lte: now } },
+          { feesPaidAt: { $ne: null, $lte: new Date(now.getTime() - 365 * 24 * 60 * 60 * 1000) } },
+        ],
+      },
+      {
+        $set: {
+          feesStatus: 'unpaid',
+          feesExpiresAt: null,
+        },
+      }
+    );
+
+    // 2. Ensure existing users without feesStatus default to 'unpaid'
+    await User.updateMany(
+      { feesStatus: { $in: [null, undefined] } },
+      { $set: { feesStatus: 'unpaid', feesExpiresAt: null, feesPaidAt: null } }
+    );
+  }
+
+  /**
    * Get all registered library users / patrons
    */
   static async getUsers() {
+    await AdminService.checkAndUpdateExpiredFees();
     return User.find().sort({ createdAt: -1 });
   }
 
   /**
-   * Get all publishers / publications
+   * Admin create a new library patron with name and phone number
+   */
+  static async createUser(input: { fullName: string; phoneNo: string; email?: string; feesStatus?: 'paid' | 'unpaid' }) {
+    if (!input.fullName || input.fullName.trim().length < 2) {
+      throw new Error('Full name is required and must be at least 2 characters.');
+    }
+    if (!input.phoneNo || !input.phoneNo.trim()) {
+      throw new Error('Phone number is required.');
+    }
+
+    const cleanedPhone = input.phoneNo.trim();
+    const existingByPhone = await User.findOne({ phoneNo: cleanedPhone });
+    if (existingByPhone) {
+      throw new Error(`A patron with phone number "${cleanedPhone}" already exists.`);
+    }
+
+    let email = input.email && input.email.trim() ? input.email.trim().toLowerCase() : undefined;
+    if (email) {
+      const existingByEmail = await User.findOne({ email });
+      if (existingByEmail) {
+        throw new Error(`A patron with email "${email}" already exists.`);
+      }
+    } else {
+      const digits = cleanedPhone.replace(/\D/g, '');
+      email = `patron.${digits || Date.now()}@library.local`;
+    }
+
+    const feesStatus = input.feesStatus === 'paid' ? 'paid' : 'unpaid';
+    const now = new Date();
+    const feesPaidAt = feesStatus === 'paid' ? now : null;
+    const feesExpiresAt = feesStatus === 'paid' ? new Date(now.getTime() + 365 * 24 * 60 * 60 * 1000) : null;
+
+    const user = new User({
+      fullName: input.fullName.trim(),
+      phoneNo: cleanedPhone,
+      email,
+      status: 'approved',
+      feesStatus,
+      feesPaidAt,
+      feesExpiresAt,
+    });
+
+    await user.save();
+    return user;
+  }
+
+  /**
+   * Get user details and currently holding borrowed books
+   */
+  static async getUserDetails(userId: string) {
+    if (!userId) throw new Error('User ID is required');
+    await AdminService.checkAndUpdateExpiredFees();
+
+    const user = await User.findById(userId);
+    if (!user) throw new Error('User not found');
+
+    // Find books currently holding (active loans: borrowed, overdue, return_pending)
+    const activeLoans = await History.find({
+      user: userId,
+      status: { $in: ['borrowed', 'overdue', 'return_pending'] },
+    })
+      .populate({
+        path: 'book',
+        select: 'bookName bookCode shelf category imageUrl noOfPages isbn available noOfCopies',
+        populate: [
+          { path: 'publisher', select: 'name' },
+          { path: 'authors', select: 'name' },
+        ],
+      })
+      .sort({ borrowedAt: -1 });
+
+    return {
+      user,
+      activeLoans,
+    };
+  }
+
+  /**
+   * Update patron details (name, phone, email, status)
+   */
+  static async updateUser(
+    userId: string,
+    input: { fullName?: string; phoneNo?: string; email?: string; status?: string; feesStatus?: 'paid' | 'unpaid' }
+  ) {
+    if (!userId) throw new Error('User ID is required');
+    const user = await User.findById(userId);
+    if (!user) throw new Error('User not found');
+
+    if (input.fullName !== undefined) {
+      if (!input.fullName.trim() || input.fullName.trim().length < 2) {
+        throw new Error('Full name must be at least 2 characters long.');
+      }
+      user.fullName = input.fullName.trim();
+    }
+
+    if (input.phoneNo !== undefined) {
+      const cleanedPhone = input.phoneNo.trim();
+      if (cleanedPhone) {
+        const existingByPhone = await User.findOne({ phoneNo: cleanedPhone, _id: { $ne: userId } });
+        if (existingByPhone) {
+          throw new Error(`Phone number "${cleanedPhone}" is already assigned to another user.`);
+        }
+        user.phoneNo = cleanedPhone;
+      } else {
+        user.phoneNo = undefined;
+      }
+    }
+
+    if (input.email !== undefined) {
+      const cleanedEmail = input.email.trim().toLowerCase();
+      if (cleanedEmail) {
+        const existingByEmail = await User.findOne({ email: cleanedEmail, _id: { $ne: userId } });
+        if (existingByEmail) {
+          throw new Error(`Email "${cleanedEmail}" is already assigned to another user.`);
+        }
+        user.email = cleanedEmail;
+      }
+    }
+
+    if (input.status !== undefined) {
+      const validStatuses = ['waiting', 'approved', 'rejected', 'blocked'];
+      if (!validStatuses.includes(input.status)) {
+        throw new Error('Invalid status.');
+      }
+      user.status = input.status === 'blocked' ? 'rejected' : (input.status as any);
+    }
+
+    if (input.feesStatus !== undefined) {
+      if (!['paid', 'unpaid'].includes(input.feesStatus)) {
+        throw new Error('Invalid fees status. Allowed values: paid, unpaid');
+      }
+      user.feesStatus = input.feesStatus;
+      if (input.feesStatus === 'paid') {
+        const now = new Date();
+        user.feesPaidAt = now;
+        // 365 days validity from payment date
+        user.feesExpiresAt = new Date(now.getTime() + 365 * 24 * 60 * 60 * 1000);
+      } else {
+        user.feesExpiresAt = null;
+      }
+    }
+
+    await user.save();
+    return user;
+  }
+
+  /**
+   * Clear orphaned authors and publishers from the database.
+   * Authors and publishers exist ONLY when at least one book (available or unavailable) references them.
+   */
+  static async syncAuthorsAndPublishers(): Promise<{ deletedAuthors: number; deletedPublishers: number }> {
+    // 1. Get all distinct author IDs referenced by existing books (including unavailable books)
+    const rawAuthorIds = await Book.distinct('authors');
+    const referencedAuthorIds = rawAuthorIds.filter((id) => id != null);
+
+    let authorDeleteResult;
+    if (referencedAuthorIds.length === 0) {
+      authorDeleteResult = await Author.deleteMany({});
+    } else {
+      authorDeleteResult = await Author.deleteMany({
+        _id: { $nin: referencedAuthorIds },
+      });
+    }
+
+    // 2. Get all distinct publisher IDs referenced by existing books (including unavailable books)
+    const rawPublisherIds = await Book.distinct('publisher');
+    const referencedPublisherIds = rawPublisherIds.filter((id) => id != null);
+
+    let publisherDeleteResult;
+    if (referencedPublisherIds.length === 0) {
+      publisherDeleteResult = await Publisher.deleteMany({});
+    } else {
+      publisherDeleteResult = await Publisher.deleteMany({
+        _id: { $nin: referencedPublisherIds },
+      });
+    }
+
+    return {
+      deletedAuthors: authorDeleteResult.deletedCount || 0,
+      deletedPublishers: publisherDeleteResult.deletedCount || 0,
+    };
+  }
+
+  /**
+   * Get all publishers / publications that currently have books in the library catalog
    */
   static async getPublications() {
+    await AdminService.syncAuthorsAndPublishers();
     return Publisher.find().sort({ createdAt: -1 });
   }
 
   /**
-   * Get all registered book authors
+   * Get all registered book authors that currently have books in the library catalog
    */
   static async getAuthors() {
+    await AdminService.syncAuthorsAndPublishers();
     return Author.find().sort({ createdAt: -1 });
   }
 
@@ -408,7 +872,39 @@ export class AdminService {
     if (activeLoan) {
       throw new Error("This book can't be deleted because this book is borrowed by a user");
     }
+
+    const previousPublisherId = book.publisher;
+    const previousAuthorIds = Array.isArray(book.authors) ? [...book.authors] : [];
+    const previousShelf = book.shelf;
+
     await Book.findByIdAndDelete(bookId);
+
+    // Adjust shelf occupancy when book is deleted
+    if (previousShelf) {
+      await ShelfService.adjustOccupancy(previousShelf, -1);
+    }
+
+    // Delete publisher if no other books in the catalog use it
+    if (previousPublisherId) {
+      const remainingBooksWithPublisher = await Book.countDocuments({ publisher: previousPublisherId });
+      if (remainingBooksWithPublisher === 0) {
+        await Publisher.findByIdAndDelete(previousPublisherId);
+      }
+    }
+
+    // Delete author(s) if no other books in the catalog use them
+    for (const authorId of previousAuthorIds) {
+      if (authorId) {
+        const remainingBooksWithAuthor = await Book.countDocuments({ authors: authorId });
+        if (remainingBooksWithAuthor === 0) {
+          await Author.findByIdAndDelete(authorId);
+        }
+      }
+    }
+
+    // Final sync to clean up any edge case orphans
+    await AdminService.syncAuthorsAndPublishers();
+
     return { success: true, message: "Book successfully deleted" };
   }
 
@@ -530,9 +1026,10 @@ export class AdminService {
   /**
    * Update user status (approve, reject, or set waiting)
    */
-  static async updateUserStatus(userId: string, status: 'waiting' | 'approved' | 'rejected') {
-    if (!['waiting', 'approved', 'rejected'].includes(status)) {
-      throw new Error('Invalid status. Allowed values: waiting, approved, rejected');
+  static async updateUserStatus(userId: string, status: 'waiting' | 'approved' | 'rejected' | 'blocked') {
+    const normalizedStatus = status === 'blocked' ? 'rejected' : status;
+    if (!['waiting', 'approved', 'rejected'].includes(normalizedStatus)) {
+      throw new Error('Invalid status. Allowed values: waiting, approved, rejected, blocked');
     }
 
     const user = await User.findById(userId);
@@ -540,11 +1037,11 @@ export class AdminService {
       throw new Error('User not found');
     }
 
-    user.status = status;
+    user.status = normalizedStatus;
     await user.save();
 
     // If approved, mark any waiting notification for this user as read
-    if (status === 'approved') {
+    if (normalizedStatus === 'approved') {
       await Notification.updateMany({ userId: user._id, read: false }, { read: true });
     }
 
