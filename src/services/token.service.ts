@@ -18,7 +18,7 @@ export class TokenService {
 
     const accessPayload: IAccessTokenPayload = {
       sub: userId,
-      email: user.email,
+      email: user.email || '',
       fullName: user.fullName,
     }
 

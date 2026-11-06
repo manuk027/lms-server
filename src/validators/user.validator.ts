@@ -2,7 +2,8 @@ export const EMAIL_REGEX = /^\S+@\S+\.\S+$/
 export const PHONE_REGEX = /^[+]?[(]?[0-9]{1,4}[)]?[-\s./0-9]*$/
 
 export const UserValidators = {
-  isValidEmail(email: string): boolean {
+  isValidEmail(email?: string): boolean {
+    if (!email || email.trim() === '') return true
     return typeof email === 'string' && EMAIL_REGEX.test(email.trim())
   },
 
@@ -16,7 +17,7 @@ export const UserValidators = {
   },
 
   emailValidator: {
-    validator: (email: string) => UserValidators.isValidEmail(email),
+    validator: (email?: string) => UserValidators.isValidEmail(email),
     message: 'Please provide a valid email address',
   },
 

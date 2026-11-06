@@ -4,9 +4,12 @@ import { UserValidators } from '../validators'
 export interface IUser extends Document {
   fullName: string
   phoneNo?: string
-  email: string
+  email?: string
   googleId?: string
   status: 'waiting' | 'approved' | 'rejected'
+  feesStatus: 'paid' | 'unpaid'
+  feesPaidAt?: Date | null
+  feesExpiresAt?: Date | null
   createdAt: Date
   updatedAt: Date
 }
@@ -28,8 +31,9 @@ const userSchema = new Schema<IUser>(
     },
     email: {
       type: String,
-      required: [true, 'Email is required'],
+      required: false,
       unique: true,
+      sparse: true,
       lowercase: true,
       trim: true,
       validate: UserValidators.emailValidator,
@@ -45,6 +49,20 @@ const userSchema = new Schema<IUser>(
       enum: ['waiting', 'approved', 'rejected'],
       default: 'waiting',
       index: true,
+    },
+    feesStatus: {
+      type: String,
+      enum: ['paid', 'unpaid'],
+      default: 'unpaid',
+      index: true,
+    },
+    feesPaidAt: {
+      type: Date,
+      default: null,
+    },
+    feesExpiresAt: {
+      type: Date,
+      default: null,
     },
   },
   {
