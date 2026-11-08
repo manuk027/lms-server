@@ -40,6 +40,14 @@ export function createApp() {
   app.use(express.json())
   app.use(cookieParser())
 
+  app.get('/', (_request, response) => {
+    response.json({
+      status: 'ok',
+      service: 'library-management-api',
+      health: '/api/health',
+    })
+  })
+
   app.get('/api/health', (_request, response) => {
     const isDbConnected = mongoose.connection.readyState === 1
     response.json({
