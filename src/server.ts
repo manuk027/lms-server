@@ -19,7 +19,7 @@ async function start() {
     console.warn('MONGODB_URI is not set; starting without a database connection.')
   }
 
-  const server = app.listen(port, () => {
+  const server = app.listen(port, '0.0.0.0', () => {
     console.info(`Library API listening on port ${port}`)
   })
 

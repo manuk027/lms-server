@@ -497,7 +497,7 @@ export class AdminService {
   }
 
   /**
-   * Admin issue / borrow a book to a registered library patron
+   * Admin issue a book to a registered library user
    */
   static async borrowBook(bookId: string, userId: string, dueDate?: string | Date) {
     if (!bookId) throw new Error('Book ID is required');
@@ -512,7 +512,7 @@ export class AdminService {
     }
 
     const user = await User.findById(userId);
-    if (!user) throw new Error('Selected patron / user not found');
+    if (!user) throw new Error('Selected user not found');
     if (user.status === 'rejected') {
       throw new Error(`Cannot issue book to user "${user.fullName}" whose account status is rejected.`);
     }
@@ -524,7 +524,7 @@ export class AdminService {
       status: { $in: ['borrowed', 'overdue'] },
     });
     if (existingLoan) {
-      throw new Error(`Patron "${user.fullName}" is already holding an active copy of this book.`);
+      throw new Error(`User "${user.fullName}" is already holding an active copy of this book.`);
     }
 
     const now = new Date();
@@ -573,7 +573,7 @@ export class AdminService {
   }
 
   /**
-   * Admin process return of a book from a patron
+   * Admin process return of a book from a user
    */
   static async returnBook(bookId: string, loanId?: string, userId?: string) {
     if (!bookId) throw new Error('Book ID is required');
@@ -591,7 +591,7 @@ export class AdminService {
 
     const loan = await History.findOne(query).populate('user', 'fullName email phoneNo');
     if (!loan) {
-      throw new Error('No active borrow record found for this book and patron');
+      throw new Error('No active issue record found for this book and user');
     }
 
     loan.status = 'returned';
@@ -649,7 +649,7 @@ export class AdminService {
   }
 
   /**
-   * Get all registered library users / patrons
+   * Get all registered library users
    */
   static async getUsers() {
     await AdminService.checkAndUpdateExpiredFees();
@@ -657,7 +657,7 @@ export class AdminService {
   }
 
   /**
-   * Admin create a new library patron with name and phone number
+   * Admin create a new library user with name and phone number
    */
   static async createUser(input: { fullName: string; phoneNo: string; email?: string; feesStatus?: 'paid' | 'unpaid' }) {
     if (!input.fullName || input.fullName.trim().length < 2) {
@@ -670,18 +670,18 @@ export class AdminService {
     const cleanedPhone = input.phoneNo.trim();
     const existingByPhone = await User.findOne({ phoneNo: cleanedPhone });
     if (existingByPhone) {
-      throw new Error(`A patron with phone number "${cleanedPhone}" already exists.`);
+      throw new Error(`A user with phone number "${cleanedPhone}" already exists.`);
     }
 
     let email = input.email && input.email.trim() ? input.email.trim().toLowerCase() : undefined;
     if (email) {
       const existingByEmail = await User.findOne({ email });
       if (existingByEmail) {
-        throw new Error(`A patron with email "${email}" already exists.`);
+        throw new Error(`A user with email "${email}" already exists.`);
       }
     } else {
       const digits = cleanedPhone.replace(/\D/g, '');
-      email = `patron.${digits || Date.now()}@library.local`;
+      email = `user.${digits || Date.now()}@library.local`;
     }
 
     const feesStatus = input.feesStatus === 'paid' ? 'paid' : 'unpaid';
@@ -735,7 +735,7 @@ export class AdminService {
   }
 
   /**
-   * Update patron details (name, phone, email, status)
+   * Update user details (name, phone, email, status)
    */
   static async updateUser(
     userId: string,

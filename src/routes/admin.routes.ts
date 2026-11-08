@@ -7,7 +7,9 @@ export const adminRouter = Router()
 
 // Public admin authentication endpoints
 adminRouter.post('/auth/login', adminLoginThrottle, AdminController.login)
+adminRouter.post('/login', adminLoginThrottle, AdminController.login)
 adminRouter.post('/auth/logout', AdminController.logout)
+adminRouter.post('/logout', AdminController.logout)
 
 // Protected admin endpoints
 adminRouter.get('/auth/me', requireAdminAuth, AdminController.getMe)

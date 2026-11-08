@@ -172,10 +172,10 @@ export class UserService {
 
     // Notify Admin of new borrow request
     try {
-      const patronName = user.fullName || user.email || 'A patron'
+      const userName = user.fullName || user.email || 'A user'
       await Notification.create({
         title: 'New Borrow Request',
-        message: `${patronName} requested to borrow "${book.bookName}"`,
+        message: `${userName} requested to borrow "${book.bookName}"`,
         type: 'borrow_request',
         recipient: 'admin',
         link: '/admin/requests?tab=borrow',
@@ -244,11 +244,11 @@ export class UserService {
       const user = await User.findById(userId)
       const book = loan.book as any
       const bookTitle = book?.bookName || 'a book'
-      const patronName = user?.fullName || user?.email || 'A patron'
+      const userName = user?.fullName || user?.email || 'A user'
 
       await Notification.create({
         title: 'Loan Extension Request',
-        message: `${patronName} requested a ${EXTENSION_DAYS}-day extension for "${bookTitle}"`,
+        message: `${userName} requested a ${EXTENSION_DAYS}-day extension for "${bookTitle}"`,
         type: 'extension_request',
         recipient: 'admin',
         link: '/admin/requests?tab=extension',
@@ -336,11 +336,11 @@ export class UserService {
       const user = await User.findById(userId)
       const book = loan.book as any
       const bookTitle = book?.bookName || 'a book'
-      const patronName = user?.fullName || user?.email || 'A patron'
+      const userName = user?.fullName || user?.email || 'A user'
 
       await Notification.create({
         title: 'Book Return Request',
-        message: `${patronName} requested to return "${bookTitle}"`,
+        message: `${userName} requested to return "${bookTitle}"`,
         type: 'return_request',
         recipient: 'admin',
         link: '/admin/requests?tab=return',
