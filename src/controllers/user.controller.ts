@@ -257,4 +257,73 @@ export class UserController {
       })
     }
   }
+
+  /**
+   * PUT /api/user/profile or PATCH /api/user/profile
+   * Updates user profile (Full Name, Phone Number)
+   */
+  static async updateProfile(req: AuthenticatedRequest, res: Response): Promise<void> {
+    try {
+      if (!req.user?.sub) {
+        res.status(401).json({ success: false, error: 'Unauthorized' })
+        return
+      }
+
+      const { fullName, phoneNo } = req.body || {}
+      const user = await UserService.updateProfile(req.user.sub, { fullName, phoneNo })
+
+      res.status(200).json({
+        success: true,
+        message: 'Profile updated successfully',
+        user: {
+          _id: user._id,
+          fullName: user.fullName,
+          phoneNo: user.phoneNo,
+          email: user.email,
+          status: user.status,
+          feesStatus: user.feesStatus,
+        },
+      })
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Failed to update profile'
+      res.status(400).json({
+        success: false,
+        error: message,
+      })
+    }
+  }
+
+  /**
+   * PATCH /api/user/loans/:loanId/status
+   * Direct update of book reading status ('read' or 'not_read')
+   */
+  static async updateReadingStatus(req: AuthenticatedRequest, res: Response): Promise<void> {
+    try {
+      if (!req.user?.sub) {
+        res.status(401).json({ success: false, error: 'Unauthorized' })
+        return
+      }
+
+      const { loanId } = req.params
+      const { readingStatus } = req.body
+
+      const loan = await UserService.updateReadingStatus(
+        req.user.sub,
+        String(loanId),
+        readingStatus
+      )
+
+      res.status(200).json({
+        success: true,
+        message: 'Reading status updated',
+        loan,
+      })
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Failed to update reading status'
+      res.status(400).json({
+        success: false,
+        error: message,
+      })
+    }
+  }
 }

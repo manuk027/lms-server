@@ -24,7 +24,7 @@ export class AdminController {
       res.cookie(ADMIN_SESSION_COOKIE, token, {
         httpOnly: true,
         secure: process.env.NODE_ENV === 'production',
-        sameSite: 'lax',
+        sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
         path: '/',
       })
 
@@ -170,7 +170,7 @@ export class AdminController {
   }
 
   /**
-   * Admin issue / borrow a book to a patron
+   * Admin issue / loan a book to a user
    * POST /api/admin/books/:id/borrow
    */
   static async borrowBook(
@@ -183,7 +183,7 @@ export class AdminController {
       const result = await AdminService.borrowBook(bookId, userId, dueDate)
       res.status(200).json({
         success: true,
-        message: 'Book successfully issued to patron',
+        message: 'Book successfully issued to user',
         loan: result.loan,
         book: result.book,
       })
@@ -248,7 +248,7 @@ export class AdminController {
   }
 
   /**
-   * Get all registered users / patrons
+   * Get all registered users
    * GET /api/admin/users
    */
   static async getUsers(
@@ -283,7 +283,7 @@ export class AdminController {
       const user = await AdminService.createUser({ fullName, phoneNo, email, feesStatus })
       res.status(201).json({
         success: true,
-        message: 'Patron created successfully',
+        message: 'User created successfully',
         user,
       })
     } catch (error: unknown) {
@@ -333,7 +333,7 @@ export class AdminController {
       const user = await AdminService.updateUser(userId, { fullName, phoneNo, email, status, feesStatus })
       res.status(200).json({
         success: true,
-        message: 'Patron updated successfully',
+        message: 'User updated successfully',
         user,
       })
     } catch (error: unknown) {
