@@ -480,4 +480,80 @@ export class UserService {
 
     return enrichLoanWithMetrics(loan)
   }
+
+  /**
+   * User update profile (Full Name and Mobile Phone Number)
+   */
+  static async updateProfile(
+    userId: string,
+    data: { fullName?: string; phoneNo?: string }
+  ) {
+    const user = await User.findById(userId)
+    if (!user) {
+      throw new Error('User not found')
+    }
+
+    if (data.fullName && data.fullName.trim().length >= 2) {
+      user.fullName = data.fullName.trim()
+    }
+
+    if (data.phoneNo !== undefined) {
+      const cleanedPhone = data.phoneNo.trim()
+      if (cleanedPhone.length > 0) {
+        // Validate uniqueness if changed
+        const existing = await User.findOne({
+          phoneNo: cleanedPhone,
+          _id: { $ne: userId },
+        })
+        if (existing) {
+          throw new Error(`Phone number "${cleanedPhone}" is already in use by another account.`)
+        }
+        user.phoneNo = cleanedPhone
+      } else {
+        user.phoneNo = ''
+      }
+    }
+
+    await user.save()
+    return user
+  }
+
+  /**
+   * User update reading status on a loan (e.g. 'read' / 'completed' vs 'not_read')
+   */
+  static async updateReadingStatus(
+    userId: string,
+    loanId: string,
+    readingStatus: string
+  ) {
+    if (!loanId) {
+      throw new Error('Loan ID is required')
+    }
+
+    const loan = await History.findOne({
+      _id: loanId,
+      user: userId,
+    }).populate({
+      path: 'book',
+      populate: [
+        { path: 'publisher', select: 'name' },
+        { path: 'authors', select: 'name category' },
+      ],
+    })
+
+    if (!loan) {
+      throw new Error('Book history record not found')
+    }
+
+    // Normalize: 'read' -> 'completed', 'not_read' -> 'not_read'
+    const normalized =
+      readingStatus === 'read' || readingStatus === 'completed'
+        ? 'completed'
+        : 'not_read'
+
+    loan.readingStatus = normalized as any
+    await loan.save()
+
+    return enrichLoanWithMetrics(loan)
+  }
 }
