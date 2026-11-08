@@ -211,7 +211,7 @@ export class UserService {
     }).populate('book')
 
     if (!loan) {
-      throw new Error('Active loan not found in your account.')
+      throw new Error('Active issue not found in your account.')
     }
 
     if (loan.extensionStatus === 'pending') {
