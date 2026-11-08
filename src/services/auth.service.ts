@@ -34,7 +34,7 @@ export class AuthService {
     if (!user) {
       // Create new user (Registration) - set into waiting list by default
       user = new User({
-        fullName: clientData?.fullName?.trim() || firebaseUser.name || 'Library Patron',
+        fullName: clientData?.fullName?.trim() || firebaseUser.name || 'Library User',
         email: firebaseUser.email.toLowerCase(),
         googleId: firebaseUser.uid,
         status: 'waiting',
@@ -68,7 +68,7 @@ export class AuthService {
 
       // Update full name if current name is generic or missing
       if (
-        (!user.fullName || user.fullName === 'Library Patron') &&
+        (!user.fullName || user.fullName === 'Library User' || user.fullName === 'Library Patron') &&
         firebaseUser.name
       ) {
         user.fullName = firebaseUser.name
