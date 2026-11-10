@@ -37,6 +37,7 @@ export class AuthService {
         fullName: clientData?.fullName?.trim() || firebaseUser.name || 'Library User',
         email: firebaseUser.email.toLowerCase(),
         googleId: firebaseUser.uid,
+        avatar: firebaseUser.picture,
         status: 'waiting',
         ...(clientData?.phoneNo ? { phoneNo: clientData.phoneNo.trim() } : {}),
       })
@@ -66,6 +67,12 @@ export class AuthService {
         hasUpdates = true
       }
 
+      // Update avatar if available and changed
+      if (firebaseUser.picture && user.avatar !== firebaseUser.picture) {
+        user.avatar = firebaseUser.picture
+        hasUpdates = true
+      }
+
       // Update full name if current name is generic or missing
       if (
         (!user.fullName || user.fullName === 'Library User' || user.fullName === 'Library Patron') &&
@@ -90,7 +97,7 @@ export class AuthService {
         email: user.email || '',
         phoneNo: user.phoneNo,
         googleId: user.googleId,
-        avatar: firebaseUser.picture,
+        avatar: user.avatar || firebaseUser.picture,
         status: user.status || 'waiting',
       },
       accessToken,
@@ -122,6 +129,7 @@ export class AuthService {
         email: user.email || '',
         phoneNo: user.phoneNo,
         googleId: user.googleId,
+        avatar: user.avatar,
         status: user.status || 'waiting',
       },
       accessToken,
@@ -144,6 +152,7 @@ export class AuthService {
       email: user.email,
       phoneNo: user.phoneNo,
       googleId: user.googleId,
+      avatar: user.avatar,
       status: user.status || 'waiting',
       createdAt: user.createdAt,
     }
