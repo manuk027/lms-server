@@ -6,6 +6,7 @@ export interface IUser extends Document {
   phoneNo?: string
   email?: string
   googleId?: string
+  avatar?: string
   status: 'waiting' | 'approved' | 'rejected'
   feesStatus: 'paid' | 'unpaid'
   feesPaidAt?: Date | null
@@ -43,6 +44,11 @@ const userSchema = new Schema<IUser>(
       sparse: true,
       unique: true,
       trim: true,
+    },
+    avatar: {
+      type: String,
+      trim: true,
+      required: false,
     },
     status: {
       type: String,
