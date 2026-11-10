@@ -280,6 +280,7 @@ export class UserController {
           fullName: user.fullName,
           phoneNo: user.phoneNo,
           email: user.email,
+          avatar: user.avatar,
           status: user.status,
           feesStatus: user.feesStatus,
         },
