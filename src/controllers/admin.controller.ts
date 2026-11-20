@@ -976,4 +976,31 @@ export class AdminController {
       })
     }
   }
+
+  /**
+   * Fetch circulation records for reports
+   * GET /api/admin/circulation/report
+   */
+  static async getCirculationReport(
+    req: AuthenticatedAdminRequest,
+    res: Response
+  ): Promise<void> {
+    try {
+      const startDate = typeof req.query.startDate === 'string' ? req.query.startDate : undefined
+      const endDate = typeof req.query.endDate === 'string' ? req.query.endDate : undefined
+
+      const reportData = await AdminService.getCirculationReport(startDate, endDate)
+      res.status(200).json({
+        success: true,
+        data: reportData,
+      })
+    } catch (error: unknown) {
+      const message =
+        error instanceof Error ? error.message : 'Failed to retrieve circulation report'
+      res.status(500).json({
+        success: false,
+        error: message,
+      })
+    }
+  }
 }
