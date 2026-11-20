@@ -14,6 +14,7 @@ adminRouter.post('/logout', AdminController.logout)
 // Protected admin endpoints
 adminRouter.get('/auth/me', requireAdminAuth, AdminController.getMe)
 adminRouter.get('/dashboard/stats', requireAdminAuth, AdminController.getDashboardStats)
+adminRouter.get('/circulation/report', requireAdminAuth, AdminController.getCirculationReport)
 
 // Inventory & Book Management endpoints
 adminRouter.post('/books', requireAdminAuth, AdminController.createBook)

@@ -1459,4 +1459,50 @@ export class AdminService {
 
     return loan;
   }
+
+  /**
+   * Fetch circulation records for reports (default: recent 3 months, or custom date range)
+   */
+  static async getCirculationReport(startDate?: string, endDate?: string) {
+    let start: Date;
+    let end: Date;
+
+    if (startDate) {
+      start = new Date(startDate);
+      if (isNaN(start.getTime())) {
+        start = new Date();
+        start.setMonth(start.getMonth() - 3);
+      }
+    } else {
+      start = new Date();
+      start.setMonth(start.getMonth() - 3);
+    }
+    start.setHours(0, 0, 0, 0);
+
+    if (endDate) {
+      end = new Date(endDate);
+      if (isNaN(end.getTime())) {
+        end = new Date();
+      }
+    } else {
+      end = new Date();
+    }
+    end.setHours(23, 59, 59, 999);
+
+    const query = {
+      borrowedAt: { $gte: start, $lte: end },
+    };
+
+    const records = await History.find(query)
+      .populate('user', 'fullName email phoneNo')
+      .populate('book', 'bookName bookCode shelf authorName isbn')
+      .sort({ borrowedAt: -1 });
+
+    return {
+      startDate: start.toISOString(),
+      endDate: end.toISOString(),
+      totalRecords: records.length,
+      records,
+    };
+  }
 }
