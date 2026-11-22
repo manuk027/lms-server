@@ -64,7 +64,7 @@ export class AdminService {
 
   /**
    * Authenticate admin by username and password.
-   * Primary verification uses environment variables, with fallback to MongoDB.
+   * Credentials are verified strictly against environment variables (no database password check).
    */
   static async login(usernameInput: unknown, passwordInput: unknown): Promise<{ admin: Omit<IAdmin, "password">; token: string }> {
     // 1. Validate inputs using decoupled AdminValidators (SOLID)
@@ -80,49 +80,36 @@ export class AdminService {
     const username = (usernameInput as string).toLowerCase().trim();
     const password = passwordInput as string;
 
-    // 2. Environment variable credentials (primary source of truth)
+    // 2. Strict Environment Variable Verification (100% env-based)
     const envUsername = (process.env.ADMIN_USERNAME || process.env.DEFAULT_ADMIN_USERNAME || "admin").toLowerCase().trim();
     const envPassword = process.env.ADMIN_PASSWORD || process.env.DEFAULT_ADMIN_PASSWORD || "Admin@123";
 
-    let admin: IAdmin | null = null;
-    const isEnvUser = username === envUsername;
-    const isEnvPasswordValid =
+    const isUsernameValid = username === envUsername;
+    const isPasswordValid =
       password === envPassword ||
       (envPassword.startsWith("$2") && (await bcrypt.compare(password, envPassword).catch(() => false)));
 
-    if (isEnvUser && isEnvPasswordValid) {
-      // Find or create/sync the admin document in MongoDB so ObjectId references remain valid
-      admin = await Admin.findOne({ username: envUsername });
-      const hashedPassword = await bcrypt.hash(password, 10);
+    // Fail immediately if credentials do not match environment variables
+    if (!isUsernameValid || !isPasswordValid) {
+      throw new Error("Invalid username or password");
+    }
 
-      if (!admin) {
-        admin = new Admin({
-          username: envUsername,
-          password: hashedPassword,
-          fullName: process.env.ADMIN_FULL_NAME || "Library Superadmin",
-          email: process.env.ADMIN_EMAIL || "admin@library.local",
-          role: "superadmin",
-          lastLogin: new Date(),
-        });
-        await admin.save();
-      } else {
-        admin.password = hashedPassword;
-        admin.lastLogin = new Date();
-        await admin.save();
-      }
+    // 3. Find or initialize the admin record in MongoDB for ObjectId relations & auditing
+    let admin = await Admin.findOne({ username: envUsername });
+    const hashedPassword = await bcrypt.hash(password, 10);
+
+    if (!admin) {
+      admin = new Admin({
+        username: envUsername,
+        password: hashedPassword,
+        fullName: process.env.ADMIN_FULL_NAME || "Library Superadmin",
+        email: process.env.ADMIN_EMAIL || "admin@library.local",
+        role: "superadmin",
+        lastLogin: new Date(),
+      });
+      await admin.save();
     } else {
-      // 3. Fallback: Lookup admin by username in DB if not matched via env
-      admin = await Admin.findOne({ username });
-      if (!admin) {
-        throw new Error("Invalid username or password");
-      }
-
-      // Verify bcrypt password against DB hash
-      const isPasswordValid = await bcrypt.compare(password, admin.password);
-      if (!isPasswordValid) {
-        throw new Error("Invalid username or password");
-      }
-
+      admin.password = hashedPassword;
       admin.lastLogin = new Date();
       await admin.save();
     }
