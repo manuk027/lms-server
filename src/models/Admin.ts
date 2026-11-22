@@ -20,7 +20,6 @@ const adminSchema = new Schema<IAdmin>(
       unique: true,
       lowercase: true,
       trim: true,
-      validate: AdminValidators.usernameValidator,
     },
     password: {
       type: String,

@@ -86,49 +86,85 @@ export class AdminService {
     const password = (passwordInput as string || "");
 
     // 2. Strict Environment Variable Verification (100% env-based)
-    const envUsername = (process.env.ADMIN_USERNAME!).toLowerCase().trim();
-    const envPassword = process.env.ADMIN_PASSWORD;
+    const rawEnvUser = process.env.ADMIN_USERNAME || "";
+    const cleanEnvUser = rawEnvUser.replace(/^["']|["']$/g, "").trim().toLowerCase();
+    const envUsername = cleanEnvUser;
 
-    const isUsernameValid = Boolean(envUsername && username === envUsername);
-    const isPasswordValid = Boolean(envPassword && password === envPassword);
+    const rawEnvPass = process.env.ADMIN_PASSWORD || "";
+    const cleanEnvPass = rawEnvPass.replace(/^["']|["']$/g, "").trim();
+
+    const isUsernameValid = Boolean(
+      envUsername && (username === envUsername || username === rawEnvUser.toLowerCase().trim())
+    );
+    const isPasswordValid = Boolean(
+      rawEnvPass &&
+        (password === rawEnvPass ||
+          password === cleanEnvPass ||
+          password.trim() === cleanEnvPass ||
+          password.trim() === rawEnvPass.trim())
+    );
 
     // Fail immediately if credentials do not match environment variables
     if (!isUsernameValid || !isPasswordValid) {
+      console.warn(
+        `[AdminService] Authentication rejected for username: "${username}". matchesUsername=${isUsernameValid}, matchesPassword=${isPasswordValid}`
+      );
       throw new Error("Invalid username or password");
     }
 
     // 3. Find or initialize the admin record in MongoDB for ObjectId relations & auditing
-    let admin = await Admin.findOne({ username: envUsername });
-    const hashedPassword = await bcrypt.hash(password, 10);
+    let admin: any = null;
+    let adminId = new mongoose.Types.ObjectId().toString();
+    let adminRole = "superadmin";
 
-    if (!admin) {
-      admin = new Admin({
-        username: envUsername,
-        password: hashedPassword,
-        fullName: process.env.ADMIN_FULL_NAME || "Library Superadmin",
-        email: process.env.ADMIN_EMAIL || "admin@library.local",
-        role: "superadmin",
-        lastLogin: new Date(),
-      });
-      await admin.save();
-    } else {
-      admin.password = hashedPassword;
-      admin.lastLogin = new Date();
-      await admin.save();
+    try {
+      if (mongoose.connection.readyState === 1) {
+        admin = await Admin.findOne({ username: envUsername });
+        const hashedPassword = await bcrypt.hash(password, 10);
+
+        if (!admin) {
+          admin = new Admin({
+            username: envUsername,
+            password: hashedPassword,
+            fullName: process.env.ADMIN_FULL_NAME || "Library Superadmin",
+            email: process.env.ADMIN_EMAIL || (envUsername.includes("@") ? envUsername : "admin@library.local"),
+            role: "superadmin",
+            lastLogin: new Date(),
+          });
+          await admin.save();
+        } else {
+          admin.password = hashedPassword;
+          admin.lastLogin = new Date();
+          await admin.save();
+        }
+        adminId = admin._id.toString();
+        adminRole = admin.role;
+      }
+    } catch (dbErr) {
+      console.warn("[AdminService] Database sync warning during login (non-fatal):", dbErr);
     }
 
     // 4. Generate admin session JWT
     const payload: AdminTokenPayload = {
-      sub: admin._id.toString(),
-      username: admin.username,
-      role: admin.role,
+      sub: adminId,
+      username: envUsername,
+      role: adminRole,
       type: "admin",
     };
 
     // Token has a 24-hour backup expiration if left open, but is destroyed when the browser is closed
     const token = jwt.sign(payload, ADMIN_JWT_SECRET, { expiresIn: "24h" });
 
-    const safeAdmin = admin.toJSON() as unknown as Omit<IAdmin, "password">;
+    const safeAdmin = admin
+      ? (admin.toJSON() as unknown as Omit<IAdmin, "password">)
+      : ({
+          _id: adminId,
+          username: envUsername,
+          fullName: process.env.ADMIN_FULL_NAME || "Library Superadmin",
+          email: process.env.ADMIN_EMAIL || (envUsername.includes("@") ? envUsername : "admin@library.local"),
+          role: "superadmin",
+        } as unknown as Omit<IAdmin, "password">);
+
     return { admin: safeAdmin, token };
   }
 

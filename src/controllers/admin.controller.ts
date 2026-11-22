@@ -36,6 +36,7 @@ export class AdminController {
       })
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : 'Login failed'
+      console.warn(`[AdminController] Admin login failed: ${message}`)
       res.status(401).json({
         success: false,
         error: message,
