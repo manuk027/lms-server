@@ -16,8 +16,8 @@ export const AdminValidators = {
     return (
       typeof username === 'string' &&
       username.trim().length >= 3 &&
-      username.trim().length <= 30 &&
-      /^[a-zA-Z0-9_-]+$/.test(username.trim())
+      username.trim().length <= 60 &&
+      /^[a-zA-Z0-9_@.-]+$/.test(username.trim())
     )
   },
 
@@ -28,7 +28,7 @@ export const AdminValidators = {
   usernameValidator: {
     validator: (username: string) => AdminValidators.isValidUsername(username),
     message:
-      'Username must be between 3 and 30 characters, containing only letters, numbers, underscores, or hyphens',
+      'Username must be between 3 and 60 characters, containing only letters, numbers, @, dots, underscores, or hyphens',
   },
 
   passwordValidator: {
@@ -47,7 +47,7 @@ export const AdminValidators = {
       errors.username = 'Username is required'
     } else if (!AdminValidators.isValidUsername(data.username)) {
       errors.username =
-        'Username must be 3-30 characters with letters, numbers, underscores or hyphens only'
+        'Username must be 3-60 characters with letters, numbers, @, dots, underscores or hyphens only'
     }
 
     if (
