@@ -35,8 +35,13 @@ export class AdminService {
    */
   static async ensureDefaultAdmin(): Promise<void> {
     try {
-      const username = (process.env.ADMIN_USERNAME || process.env.DEFAULT_ADMIN_USERNAME || "admin").toLowerCase().trim();
-      const rawPassword = process.env.ADMIN_PASSWORD || process.env.DEFAULT_ADMIN_PASSWORD || "Admin@123";
+      if (!process.env.ADMIN_USERNAME || !process.env.ADMIN_PASSWORD) {
+        console.warn("[AdminService] ADMIN_USERNAME or ADMIN_PASSWORD not configured in environment. Skipping default admin seeding.");
+        return;
+      }
+
+      const username = (process.env.ADMIN_USERNAME).toLowerCase().trim();
+      const rawPassword = process.env.ADMIN_PASSWORD;
       const hashedPassword = await bcrypt.hash(rawPassword, 10);
 
       const existingAdmin = await Admin.findOne({ username });
@@ -64,7 +69,7 @@ export class AdminService {
 
   /**
    * Authenticate admin by username and password.
-   * Primary verification uses environment variables, with fallback to MongoDB.
+   * Credentials are verified strictly against environment variables (no database password check).
    */
   static async login(usernameInput: unknown, passwordInput: unknown): Promise<{ admin: Omit<IAdmin, "password">; token: string }> {
     // 1. Validate inputs using decoupled AdminValidators (SOLID)
@@ -80,49 +85,38 @@ export class AdminService {
     const username = (usernameInput as string).toLowerCase().trim();
     const password = passwordInput as string;
 
-    // 2. Environment variable credentials (primary source of truth)
-    const envUsername = (process.env.ADMIN_USERNAME || process.env.DEFAULT_ADMIN_USERNAME || "admin").toLowerCase().trim();
-    const envPassword = process.env.ADMIN_PASSWORD || process.env.DEFAULT_ADMIN_PASSWORD || "Admin@123";
+    // 2. Strict Environment Variable Verification (100% env-based)
+    const envUsername = (process.env.ADMIN_USERNAME!).toLowerCase().trim();
+    const envPassword = process.env.ADMIN_PASSWORD;
 
-    let admin: IAdmin | null = null;
-    const isEnvUser = username === envUsername;
-    const isEnvPasswordValid =
-      password === envPassword ||
-      (envPassword.startsWith("$2") && (await bcrypt.compare(password, envPassword).catch(() => false)));
+    const isUsernameValid = Boolean(envUsername && username === envUsername);
+    const isPasswordValid = Boolean(
+      envPassword &&
+      (password === envPassword ||
+        (envPassword.startsWith("$2") && (await bcrypt.compare(password, envPassword).catch(() => false))))
+    );
 
-    if (isEnvUser && isEnvPasswordValid) {
-      // Find or create/sync the admin document in MongoDB so ObjectId references remain valid
-      admin = await Admin.findOne({ username: envUsername });
-      const hashedPassword = await bcrypt.hash(password, 10);
+    // Fail immediately if credentials do not match environment variables
+    if (!isUsernameValid || !isPasswordValid) {
+      throw new Error("Invalid username or password");
+    }
 
-      if (!admin) {
-        admin = new Admin({
-          username: envUsername,
-          password: hashedPassword,
-          fullName: process.env.ADMIN_FULL_NAME || "Library Superadmin",
-          email: process.env.ADMIN_EMAIL || "admin@library.local",
-          role: "superadmin",
-          lastLogin: new Date(),
-        });
-        await admin.save();
-      } else {
-        admin.password = hashedPassword;
-        admin.lastLogin = new Date();
-        await admin.save();
-      }
+    // 3. Find or initialize the admin record in MongoDB for ObjectId relations & auditing
+    let admin = await Admin.findOne({ username: envUsername });
+    const hashedPassword = await bcrypt.hash(password, 10);
+
+    if (!admin) {
+      admin = new Admin({
+        username: envUsername,
+        password: hashedPassword,
+        fullName: process.env.ADMIN_FULL_NAME || "Library Superadmin",
+        email: process.env.ADMIN_EMAIL || "admin@library.local",
+        role: "superadmin",
+        lastLogin: new Date(),
+      });
+      await admin.save();
     } else {
-      // 3. Fallback: Lookup admin by username in DB if not matched via env
-      admin = await Admin.findOne({ username });
-      if (!admin) {
-        throw new Error("Invalid username or password");
-      }
-
-      // Verify bcrypt password against DB hash
-      const isPasswordValid = await bcrypt.compare(password, admin.password);
-      if (!isPasswordValid) {
-        throw new Error("Invalid username or password");
-      }
-
+      admin.password = hashedPassword;
       admin.lastLogin = new Date();
       await admin.save();
     }
@@ -161,8 +155,8 @@ export class AdminService {
     }
 
     if (!admin) {
-      const envUsername = (process.env.ADMIN_USERNAME || process.env.DEFAULT_ADMIN_USERNAME || "admin").toLowerCase().trim();
-      if (payload.username === envUsername) {
+      const envUsername = (process.env.ADMIN_USERNAME || "").toLowerCase().trim();
+      if (envUsername && payload.username === envUsername) {
         return {
           _id: payload.sub,
           username: envUsername,
@@ -372,7 +366,7 @@ export class AdminService {
       authorName?: string;
       publication?: string;
       noOfPages?: number | string;
-    noOfCopies?: number | string;
+      noOfCopies?: number | string;
       language?: string;
       category?: string;
       imageUrl?: string;
@@ -400,7 +394,7 @@ export class AdminService {
     const previousAuthorIds = Array.isArray(book.authors) ? [...book.authors] : [];
     const previousShelf = book.shelf;
 
-   // 1 - book name
+    // 1 - book name
     const rawName = input.name || input.bookName;
     if (rawName !== undefined) {
       if (!rawName.trim()) throw new Error("Book title/name cannot be empty.");
@@ -416,7 +410,7 @@ export class AdminService {
       }
       book.publisher = publisher._id as any;
     }
-     // 3- author name
+    // 3- author name
     if (input.authorName !== undefined) {
       const rawAuthor = input.authorName.trim();
       if (!rawAuthor) throw new Error("Author name cannot be empty.");
@@ -1249,7 +1243,7 @@ export class AdminService {
         { link: { $regex: 'tab=borrow' }, read: false, userId: loan.user?._id },
         { read: true }
       );
-    } catch {}
+    } catch { }
 
     return loan;
   }
@@ -1354,7 +1348,7 @@ export class AdminService {
         { link: { $regex: 'tab=extension' }, read: false, userId: loan.user?._id },
         { read: true }
       );
-    } catch {}
+    } catch { }
 
     return loan;
   }
@@ -1510,7 +1504,7 @@ export class AdminService {
         { link: { $regex: 'tab=return' }, read: false, userId: loan.user?._id },
         { read: true }
       );
-    } catch {}
+    } catch { }
 
     return loan;
   }
