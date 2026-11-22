@@ -1,6 +1,7 @@
 
 import bcrypt from 'bcryptjs'
 import jwt from 'jsonwebtoken'
+import mongoose from 'mongoose'
 import { Admin, IAdmin } from '../models/Admin'
 import { Author } from '../models/Author'
 import { Book } from '../models/Book'
@@ -30,26 +31,31 @@ const ADMIN_JWT_SECRET = process.env.ADMIN_JWT_SECRET || "fallback_admin_session
 
 export class AdminService {
   /**
-   * Automatically seed a default admin user if no admin exists in the database
+   * Automatically seed/sync default admin user from environment variables
    */
   static async ensureDefaultAdmin(): Promise<void> {
     try {
-      const adminCount = await Admin.countDocuments();
-      if (adminCount === 0) {
-        const username = (process.env.DEFAULT_ADMIN_USERNAME || "admin").toLowerCase().trim();
-        const rawPassword = process.env.DEFAULT_ADMIN_PASSWORD || "Admin@123";
-        const hashedPassword = await bcrypt.hash(rawPassword, 10);
+      const username = (process.env.ADMIN_USERNAME || process.env.DEFAULT_ADMIN_USERNAME || "admin").toLowerCase().trim();
+      const rawPassword = process.env.ADMIN_PASSWORD || process.env.DEFAULT_ADMIN_PASSWORD || "Admin@123";
+      const hashedPassword = await bcrypt.hash(rawPassword, 10);
 
+      const existingAdmin = await Admin.findOne({ username });
+      if (!existingAdmin) {
         const defaultAdmin = new Admin({
           username,
           password: hashedPassword,
-          fullName: "Library Superadmin",
-          email: "admin@library.local",
+          fullName: process.env.ADMIN_FULL_NAME || "Library Superadmin",
+          email: process.env.ADMIN_EMAIL || "admin@library.local",
           role: "superadmin",
         });
 
         await defaultAdmin.save();
-        console.info(`[AdminService] Seeded default admin: "${username}" with configured password.`);
+        console.info(`[AdminService] Seeded default admin: "${username}" from environment.`);
+      } else {
+        // Keep DB credentials in sync with environment password
+        existingAdmin.password = hashedPassword;
+        await existingAdmin.save();
+        console.info(`[AdminService] Synchronized admin "${username}" credentials from environment.`);
       }
     } catch (err) {
       console.error("[AdminService] Error checking/seeding default admin:", err);
@@ -57,7 +63,8 @@ export class AdminService {
   }
 
   /**
-   * Authenticate admin by username and password
+   * Authenticate admin by username and password.
+   * Primary verification uses environment variables, with fallback to MongoDB.
    */
   static async login(usernameInput: unknown, passwordInput: unknown): Promise<{ admin: Omit<IAdmin, "password">; token: string }> {
     // 1. Validate inputs using decoupled AdminValidators (SOLID)
@@ -73,24 +80,54 @@ export class AdminService {
     const username = (usernameInput as string).toLowerCase().trim();
     const password = passwordInput as string;
 
-    // 2. Lookup admin by username
-    const admin = await Admin.findOne({ username });
-    if (!admin) {
-      throw new Error("Invalid username or password");
+    // 2. Environment variable credentials (primary source of truth)
+    const envUsername = (process.env.ADMIN_USERNAME || process.env.DEFAULT_ADMIN_USERNAME || "admin").toLowerCase().trim();
+    const envPassword = process.env.ADMIN_PASSWORD || process.env.DEFAULT_ADMIN_PASSWORD || "Admin@123";
+
+    let admin: IAdmin | null = null;
+    const isEnvUser = username === envUsername;
+    const isEnvPasswordValid =
+      password === envPassword ||
+      (envPassword.startsWith("$2") && (await bcrypt.compare(password, envPassword).catch(() => false)));
+
+    if (isEnvUser && isEnvPasswordValid) {
+      // Find or create/sync the admin document in MongoDB so ObjectId references remain valid
+      admin = await Admin.findOne({ username: envUsername });
+      const hashedPassword = await bcrypt.hash(password, 10);
+
+      if (!admin) {
+        admin = new Admin({
+          username: envUsername,
+          password: hashedPassword,
+          fullName: process.env.ADMIN_FULL_NAME || "Library Superadmin",
+          email: process.env.ADMIN_EMAIL || "admin@library.local",
+          role: "superadmin",
+          lastLogin: new Date(),
+        });
+        await admin.save();
+      } else {
+        admin.password = hashedPassword;
+        admin.lastLogin = new Date();
+        await admin.save();
+      }
+    } else {
+      // 3. Fallback: Lookup admin by username in DB if not matched via env
+      admin = await Admin.findOne({ username });
+      if (!admin) {
+        throw new Error("Invalid username or password");
+      }
+
+      // Verify bcrypt password against DB hash
+      const isPasswordValid = await bcrypt.compare(password, admin.password);
+      if (!isPasswordValid) {
+        throw new Error("Invalid username or password");
+      }
+
+      admin.lastLogin = new Date();
+      await admin.save();
     }
 
-    // 3. Verify bcrypt password
-    const isPasswordValid = await bcrypt.compare(password, admin.password);
-    if (!isPasswordValid) {
-      throw new Error("Invalid username or password");
-    }
-
-    // 4. Update last login
-    admin.lastLogin = new Date();
-    await admin.save();
-
-    // 5. Generate admin session JWT
-    // The session is tied to the browser session (expires when browser is closed via session cookie and sessionStorage)
+    // 4. Generate admin session JWT
     const payload: AdminTokenPayload = {
       sub: admin._id.toString(),
       username: admin.username,
@@ -114,8 +151,26 @@ export class AdminService {
       throw new Error("Invalid admin token type");
     }
 
-    const admin = await Admin.findById(payload.sub);
+    let admin = null;
+    try {
+      if (mongoose.connection.readyState === 1 && payload.sub) {
+        admin = await Admin.findById(payload.sub);
+      }
+    } catch {
+      // ignore lookup error
+    }
+
     if (!admin) {
+      const envUsername = (process.env.ADMIN_USERNAME || process.env.DEFAULT_ADMIN_USERNAME || "admin").toLowerCase().trim();
+      if (payload.username === envUsername) {
+        return {
+          _id: payload.sub,
+          username: envUsername,
+          fullName: process.env.ADMIN_FULL_NAME || "Library Superadmin",
+          email: process.env.ADMIN_EMAIL || "admin@library.local",
+          role: payload.role || "superadmin",
+        } as unknown as IAdmin;
+      }
       throw new Error("Admin account not found");
     }
 
