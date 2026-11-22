@@ -35,8 +35,13 @@ export class AdminService {
    */
   static async ensureDefaultAdmin(): Promise<void> {
     try {
-      const username = (process.env.ADMIN_USERNAME || process.env.DEFAULT_ADMIN_USERNAME || "admin").toLowerCase().trim();
-      const rawPassword = process.env.ADMIN_PASSWORD || process.env.DEFAULT_ADMIN_PASSWORD || "Admin@123";
+      if (!process.env.ADMIN_USERNAME || !process.env.ADMIN_PASSWORD) {
+        console.warn("[AdminService] ADMIN_USERNAME or ADMIN_PASSWORD not configured in environment. Skipping default admin seeding.");
+        return;
+      }
+
+      const username = (process.env.ADMIN_USERNAME).toLowerCase().trim();
+      const rawPassword = process.env.ADMIN_PASSWORD;
       const hashedPassword = await bcrypt.hash(rawPassword, 10);
 
       const existingAdmin = await Admin.findOne({ username });
@@ -150,8 +155,8 @@ export class AdminService {
     }
 
     if (!admin) {
-      const envUsername = (process.env.ADMIN_USERNAME || process.env.DEFAULT_ADMIN_USERNAME || "admin").toLowerCase().trim();
-      if (payload.username === envUsername) {
+      const envUsername = (process.env.ADMIN_USERNAME || "").toLowerCase().trim();
+      if (envUsername && payload.username === envUsername) {
         return {
           _id: payload.sub,
           username: envUsername,
