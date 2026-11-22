@@ -81,8 +81,8 @@ export class AdminService {
     const password = passwordInput as string;
 
     // 2. Strict Environment Variable Verification (100% env-based)
-    const envUsername = (process.env.ADMIN_USERNAME || process.env.DEFAULT_ADMIN_USERNAME || "").toLowerCase().trim();
-    const envPassword = process.env.ADMIN_PASSWORD || process.env.DEFAULT_ADMIN_PASSWORD || "";
+    const envUsername = (process.env.ADMIN_USERNAME!).toLowerCase().trim();
+    const envPassword = process.env.ADMIN_PASSWORD;
 
     const isUsernameValid = Boolean(envUsername && username === envUsername);
     const isPasswordValid = Boolean(
