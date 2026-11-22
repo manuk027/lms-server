@@ -81,13 +81,15 @@ export class AdminService {
     const password = passwordInput as string;
 
     // 2. Strict Environment Variable Verification (100% env-based)
-    const envUsername = (process.env.ADMIN_USERNAME || process.env.DEFAULT_ADMIN_USERNAME || "admin").toLowerCase().trim();
-    const envPassword = process.env.ADMIN_PASSWORD || process.env.DEFAULT_ADMIN_PASSWORD || "Admin@123";
+    const envUsername = (process.env.ADMIN_USERNAME || process.env.DEFAULT_ADMIN_USERNAME || "").toLowerCase().trim();
+    const envPassword = process.env.ADMIN_PASSWORD || process.env.DEFAULT_ADMIN_PASSWORD || "";
 
-    const isUsernameValid = username === envUsername;
-    const isPasswordValid =
-      password === envPassword ||
-      (envPassword.startsWith("$2") && (await bcrypt.compare(password, envPassword).catch(() => false)));
+    const isUsernameValid = Boolean(envUsername && username === envUsername);
+    const isPasswordValid = Boolean(
+      envPassword &&
+      (password === envPassword ||
+        (envPassword.startsWith("$2") && (await bcrypt.compare(password, envPassword).catch(() => false))))
+    );
 
     // Fail immediately if credentials do not match environment variables
     if (!isUsernameValid || !isPasswordValid) {
@@ -359,7 +361,7 @@ export class AdminService {
       authorName?: string;
       publication?: string;
       noOfPages?: number | string;
-    noOfCopies?: number | string;
+      noOfCopies?: number | string;
       language?: string;
       category?: string;
       imageUrl?: string;
@@ -387,7 +389,7 @@ export class AdminService {
     const previousAuthorIds = Array.isArray(book.authors) ? [...book.authors] : [];
     const previousShelf = book.shelf;
 
-   // 1 - book name
+    // 1 - book name
     const rawName = input.name || input.bookName;
     if (rawName !== undefined) {
       if (!rawName.trim()) throw new Error("Book title/name cannot be empty.");
@@ -403,7 +405,7 @@ export class AdminService {
       }
       book.publisher = publisher._id as any;
     }
-     // 3- author name
+    // 3- author name
     if (input.authorName !== undefined) {
       const rawAuthor = input.authorName.trim();
       if (!rawAuthor) throw new Error("Author name cannot be empty.");
@@ -1236,7 +1238,7 @@ export class AdminService {
         { link: { $regex: 'tab=borrow' }, read: false, userId: loan.user?._id },
         { read: true }
       );
-    } catch {}
+    } catch { }
 
     return loan;
   }
@@ -1341,7 +1343,7 @@ export class AdminService {
         { link: { $regex: 'tab=extension' }, read: false, userId: loan.user?._id },
         { read: true }
       );
-    } catch {}
+    } catch { }
 
     return loan;
   }
@@ -1497,7 +1499,7 @@ export class AdminService {
         { link: { $regex: 'tab=return' }, read: false, userId: loan.user?._id },
         { read: true }
       );
-    } catch {}
+    } catch { }
 
     return loan;
   }
