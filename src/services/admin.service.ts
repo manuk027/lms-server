@@ -73,17 +73,17 @@ export class AdminService {
    */
   static async login(usernameInput: unknown, passwordInput: unknown): Promise<{ admin: Omit<IAdmin, "password">; token: string }> {
     // 1. Validate inputs using decoupled AdminValidators (SOLID)
-    const validation = AdminValidators.validateLoginInput({
-      username: usernameInput,
-      password: passwordInput,
-    });
+    // const validation = AdminValidators.validateLoginInput({
+    //   username: usernameInput,
+    //   password: passwordInput,
+    // });
 
-    if (!validation.isValid) {
-      throw new Error("Invalid username or password");
-    }
+    // if (!validation.isValid) {
+    //   throw new Error("Invalid username or password");
+    // }
 
-    const username = (usernameInput as string).toLowerCase().trim();
-    const password = passwordInput as string;
+    const username = (usernameInput as string || "").toLowerCase().trim();
+    const password = (passwordInput as string || "");
 
     // 2. Strict Environment Variable Verification (100% env-based)
     const envUsername = (process.env.ADMIN_USERNAME!).toLowerCase().trim();
