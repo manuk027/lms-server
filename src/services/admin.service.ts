@@ -90,11 +90,7 @@ export class AdminService {
     const envPassword = process.env.ADMIN_PASSWORD;
 
     const isUsernameValid = Boolean(envUsername && username === envUsername);
-    const isPasswordValid = Boolean(
-      envPassword &&
-      (password === envPassword ||
-        (envPassword.startsWith("$2") && (await bcrypt.compare(password, envPassword).catch(() => false))))
-    );
+    const isPasswordValid = Boolean(envPassword && password === envPassword);
 
     // Fail immediately if credentials do not match environment variables
     if (!isUsernameValid || !isPasswordValid) {
